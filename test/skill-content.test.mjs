@@ -154,8 +154,9 @@ test("skill bundles an exact installable copy of the Chrome extension", async ()
     );
   }
   const manifest = JSON.parse(await readFile(join(skillRoot, "assets", "chrome-extension", "manifest.json"), "utf8"));
+  const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
   assert.equal(manifest.name, "Lingee Chrome Agent Bridge");
-  assert.equal(manifest.version, "0.1.22");
+  assert.equal(manifest.version, packageManifest.version);
 });
 
 test("tool reference structurally matches MCP schemas and Bridge mappings", async () => {

@@ -4,9 +4,9 @@
 
 0.1.12/remove-after-blank-v11 已通过真实 Chrome 152 的基础 E2E，以及 10/10 轮 Surfingkeys 增强 iframe 压力回归。随后按用户指定，将产品名统一为 **Lingee Chrome Agent Bridge**，并把 `https://test.lingee.com/favicon-32x32.png` 的原始 48×48 PNG 配置为扩展和工具栏图标。0.1.17 采用用户选定的 Precision Glass 方案：受控期间常驻顶部玻璃状态条和白色双描边鼠标，接管时显示边缘扫光，点击显示双环与中心闪点，滚动显示方向胶囊，拖拽显示起点与连线。0.1.18 将普通移动调整为按距离计算的 180–360ms 动画，到达后短暂停留再点击，并在导航后的新文档恢复标签页最后坐标。0.1.19 进一步清理扩展升级后旧文档中残留的历史覆盖层。0.1.20 修复 Shadow DOM 的 `all: initial !important` 覆盖宿主定位与层级声明的问题，将覆盖层放入浏览器 top layer，并在接管、DOMContentLoaded 和顶层导航完成时重试注入，避免早期注入竞态导致箭头缺失。0.1.21 将新建箭头无动画定位到视口中心后才恢复移动过渡，避免初始化时从左上角滑入或逻辑坐标先于实际画面。0.1.22 将动画与真实输入改为强绑定：同一标签页操作串行执行，覆盖层反馈须完成浏览器绘制并复核 top layer、坐标及顶层 documentId 后才派发输入；导航竞态或覆盖层失效时拒绝派发。原有居中、视口 resize 锚定、宿主自恢复和 detach 清理逻辑继续保留。Native Messaging 主机名等内部兼容标识保持不变。
 
-- `src/version.mjs` 让 Host/MCP 版本统一来自 package.json；0.1.22 使用 `overlay-v13` 标记。安装器使用带构建哈希的文件名，避免覆盖运行中的旧文件。
+- `src/version.mjs` 让 Host/MCP 版本统一来自 package.json；当前发布版本为 0.1.23，继续使用 `overlay-v13` 标记。安装器使用带构建哈希的文件名，避免覆盖运行中的旧文件。
 - `extension/virtual-cursor.js` 使用封闭 Shadow DOM、无命中测试的顶层覆盖层，detach 时清理。当前 Precision Glass 实现使用按距离计算的可见移动，并由后台保存每个受控标签页最后坐标以支持导航恢复。动作与动画强绑定；覆盖层未成功绘制时动作会失败关闭。
-- 浏览器控制 Skill 已更名为 `lingee-chrome-control`，UI 显示名为 `Lingee Chrome Control`。Skill 现内置公共 Bridge Client 和 `assets/chrome-extension/` 下的完整 0.1.22 解包扩展，不再依赖源码仓库；多实例未选择时 CLI 和 doctor 均拒绝猜选。本机安装副本与仓库一致。0.1.22 Skill 明确要求所有用户可见鼠标交互走指针感知的高层方法，禁止用 raw CDP、DOM `.click()`、合成事件、脚本滚动或直接导航替代。最新版 Skill 包为 `dist/lingee-chrome-control-skill-0.1.22.zip`；独立扩展 0.1.22 ZIP 待需要时生成。
+- 浏览器控制 Skill 已更名为 `lingee-chrome-control`，UI 显示名为 `Lingee Chrome Control`。Skill 现内置公共 Bridge Client 和 `assets/chrome-extension/` 下的完整 0.1.23 解包扩展，不再依赖源码仓库；多实例未选择时 CLI 和 doctor 均拒绝猜选。本机安装副本与仓库一致。0.1.23 Skill 强制所有浏览器控制持续使用标准高层 MCP/CLI 方法。最新版 Skill 包为 `dist/lingee-chrome-control-skill-0.1.23.zip`；独立扩展 0.1.23 ZIP 待需要时生成。
 - Skill 的标准控制契约允许高层 MCP 和 bundled CLI 两种等价调用方式，但要求整个任务期间不得切换到 raw CDP、页面脚本、DevTools、平台自带浏览器工具或其他控制适配器。标准 MCP 不发布 `browser_cdp`/`policy_allow_cdp_method`，Skill CLI 使用高层 Bridge 方法白名单并在连接 Chrome 前以 `NONSTANDARD_BROWSER_CONTROL_BLOCKED` 拒绝 raw、未知或未来未审查的方法。底层 raw Bridge API仅保留给非 Skill 开发用途。
 - E2E 在打开标签页前检查 Host/扩展版本及兼容性标记；输出运行版本证据。外部 frame 检查改为读取测试页自行呈现的中和状态，不调用原始 CDP。
 - 修复 onDetach 异步清理与重新 ensure 的竞态，新增等待屏障。晚到的 detach 事件会安全取消初始化，清理后可重试；不假设 Chrome 事件携带本项目世代信息。
@@ -18,7 +18,7 @@
 - 最终测试和审查记录见 [本轮验证记录](./VALIDATION-2026-09-11.md)。
 - 独立终审确认一个剩余 P2 限制：已连接 host 在监控安装后才创建 shadow root 时，根发现可能遗漏。架构文档已明确此限制，后续需设计可控成本的发现机制；现有测试通过不代表覆盖此场景。
 
-下一步：如需单独对外分发扩展，生成并核验 0.1.22 扩展 ZIP；Skill 0.1.22 ZIP 已包含完整解包扩展。也可继续处理已记录的 late shadow-root 发现限制。
+下一步：重新加载已同步的 0.1.23 扩展并核验运行版本；如需单独对外分发扩展，生成独立扩展 ZIP。Skill 0.1.23 ZIP 已包含完整解包扩展。也可继续处理已记录的 late shadow-root 发现限制。
 
 ---
 
