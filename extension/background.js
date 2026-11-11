@@ -34,6 +34,10 @@ const { attachedTabs, controlledTabs } = debuggerController;
 const monitoredDocumentsByTab = new Map();
 const neutralizedFrameIdsByTab = new Map();
 const cursorPositionsByTab = new Map();
+const jsDialogsByTab = new Map();
+const dialogOpenWaitersByTab = new Map();
+const dialogCloseWaitersByTab = new Map();
+let nextDialogId = 1;
 const tabOperationQueue = createTabOperationQueue();
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -62,6 +66,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (source.tabId != null && method === "Page.javascriptDialogOpening") {
+    const dialog = {
+      id: String(nextDialogId++),
+      type: params?.type || "unknown",
+      message: params?.message || "",
+      url: params?.url || "",
+      promptText: params?.defaultPrompt || ""
+    };
+    jsDialogsByTab.set(source.tabId, dialog);
+    for (const resolve of dialogOpenWaitersByTab.get(source.tabId) || []) resolve(dialog);
+  }
+  if (source.tabId != null && method === "Page.javascriptDialogClosed") {
+    const dialog = jsDialogsByTab.get(source.tabId) || null;
+    jsDialogsByTab.delete(source.tabId);
+    for (const resolve of dialogCloseWaitersByTab.get(source.tabId) || []) resolve(dialog);
+  }
   recordEvent({ source, method, params });
 });
 
@@ -76,6 +96,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   monitoredDocumentsByTab.delete(tabId);
   neutralizedFrameIdsByTab.delete(tabId);
   cursorPositionsByTab.delete(tabId);
+  jsDialogsByTab.delete(tabId);
+  dialogOpenWaitersByTab.delete(tabId);
+  dialogCloseWaitersByTab.delete(tabId);
 });
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   tabOperationQueue.cancel(removedTabId);
@@ -84,6 +107,9 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   monitoredDocumentsByTab.delete(removedTabId);
   neutralizedFrameIdsByTab.delete(removedTabId);
   cursorPositionsByTab.delete(removedTabId);
+  jsDialogsByTab.delete(removedTabId);
+  dialogOpenWaitersByTab.delete(removedTabId);
+  dialogCloseWaitersByTab.delete(removedTabId);
   if (wasControlled) {
     recordEvent({ source: { tabId: removedTabId }, method: "Browser.tabReplaced", params: { addedTabId } });
   }
@@ -108,7 +134,7 @@ function connectNative(force = false) {
   try {
     const port = chrome.runtime.connectNative(HOST_NAME);
     nativePort = port;
-    port.onMessage.addListener((message) => onNativeMessage(message, port));
+    port.onMessage.addListener((message) => { void onNativeMessage(message, port); });
     port.onDisconnect.addListener(() => {
       if (nativePort !== port) return;
       connected = false;
@@ -159,7 +185,7 @@ async function execute(method, params) {
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13" },
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -272,8 +298,8 @@ async function execute(method, params) {
     case "browser.coordinateClick": {
       const x = number(params.x, 0); const y = number(params.y, 0); const button = params.button || "left"; const clickCount = Number(params.clickCount) || 1;
       return runPointerOperation(params, settings, async (tabId) => {
-        await clickCoordinates(tabId, x, y, button, clickCount);
-        return { x, y, button, clickCount };
+        const click = await clickCoordinates(tabId, x, y, button, clickCount);
+        return { x, y, button, clickCount, ...click };
       });
     }
     case "browser.drag":
@@ -301,9 +327,12 @@ async function execute(method, params) {
     }
     case "browser.setFileInput":
       return setFileInput(await authorizedTab(params, settings), requireString(params.selector, "selector"), params.files);
+    case "browser.getDialog": {
+      const tabId = await controlledDialogTab(params, settings);
+      return jsDialogsByTab.get(tabId) || null;
+    }
     case "browser.handleDialog":
-      await sendCdp(await authorizedTab(params, settings), "Page.handleJavaScriptDialog", { accept: params.accept !== false, promptText: params.promptText });
-      return { ok: true };
+      return handleJavaScriptDialog(params, settings);
     case "browser.cdp":
       return sendCdp(await authorizedTab(params, settings), requireString(params.command, "command"), params.params || {});
     case "browser.getEvents":
@@ -324,6 +353,49 @@ async function authorizedTab(params, settings) {
   await assertTabNotBlocked(tabId, settings);
   await ensureDebugger(tabId);
   return tabId;
+}
+
+async function controlledDialogTab(params, settings) {
+  const tabId = requireTabId(params);
+  await assertTabNotBlocked(tabId, settings);
+  if (!controlledTabs.has(tabId) || !attachedTabs.has(tabId)) {
+    throw codedError("POINTER_CONTROL_LOST", "The tab is not under debugger control for JavaScript dialog handling");
+  }
+  return tabId;
+}
+
+async function handleJavaScriptDialog(params, settings) {
+  const tabId = await controlledDialogTab(params, settings);
+  const dialog = jsDialogsByTab.get(tabId);
+  if (!dialog) throw codedError("JAVASCRIPT_DIALOG_NOT_FOUND", "No active JavaScript dialog is registered for this tab");
+  if (params.dialogId != null && String(params.dialogId) !== dialog.id) {
+    throw codedError("JAVASCRIPT_DIALOG_CHANGED", "The active JavaScript dialog changed before it could be handled", {
+      expectedDialogId: String(params.dialogId),
+      actualDialogId: dialog.id
+    });
+  }
+
+  const accept = dialog.type === "alert" ? true : params.accept !== false;
+  let resolveClosed;
+  const closed = new Promise((resolve) => { resolveClosed = resolve; });
+  const waiters = dialogCloseWaitersByTab.get(tabId) || new Set();
+  waiters.add(resolveClosed);
+  dialogCloseWaitersByTab.set(tabId, waiters);
+
+  // A modal dialog blocks cursor recovery/page injection. Send directly to the
+  // already attached target, as Codex Browser Use does for its dialog object.
+  const command = chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", compact({
+    accept,
+    promptText: dialog.type === "prompt" && accept ? String(params.promptText ?? "") : undefined
+  }));
+  try {
+    await Promise.race([closed, command.then(() => closed)]);
+    return { ok: true, dialog };
+  } finally {
+    waiters.delete(resolveClosed);
+    if (waiters.size === 0) dialogCloseWaitersByTab.delete(tabId);
+    command.catch(() => {});
+  }
 }
 
 function runPointerOperation(params, settings, operation) {
@@ -592,8 +664,8 @@ async function evaluateAttachedValue(tabId, expression, expectedDocumentId) {
 
 async function clickLocator(tabId, locator, button, clickCount) {
   const target = await locate(tabId, locator);
-  await clickCoordinates(tabId, target.x, target.y, button, clickCount);
-  return target;
+  const click = await clickCoordinates(tabId, target.x, target.y, button, clickCount);
+  return { ...target, ...click };
 }
 
 async function clickCoordinates(tabId, x, y, button, clickCount) {
@@ -604,15 +676,47 @@ async function clickCoordinates(tabId, x, y, button, clickCount) {
     await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button, clickCount }, movement.documentId);
     pressed = true;
     await waitForCursorMotion(CURSOR_PRESS_HOLD_MS);
-    await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button, clickCount }, movement.documentId);
+    const release = await dispatchMouseReleaseOrDialog(tabId, { type: "mouseReleased", x, y, button, clickCount }, movement.documentId);
     pressed = false;
+    if (release.dialogOpened) return release;
   } finally {
     if (pressed) {
       await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button, clickCount }).catch(() => {});
     }
   }
-  await requireVirtualCursor(tabId, x, y, "click", { waitForPaint: true }, movement.documentId);
-  await waitForCursorMotion(CLICK_FEEDBACK_MS);
+  try {
+    await requireVirtualCursor(tabId, x, y, "click", { waitForPaint: true }, movement.documentId);
+    await waitForCursorMotion(CLICK_FEEDBACK_MS);
+    return { dialogOpened: false };
+  } catch (error) {
+    const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+    if (frame?.documentId && frame.documentId !== movement.documentId) {
+      void recoverVirtualCursor(tabId, "post-click-navigation");
+      return { dialogOpened: false, navigationStarted: true };
+    }
+    throw error;
+  }
+}
+
+async function dispatchMouseReleaseOrDialog(tabId, params, expectedDocumentId) {
+  let resolveDialog;
+  const dialogOpened = new Promise((resolve) => { resolveDialog = resolve; });
+  const waiters = dialogOpenWaitersByTab.get(tabId) || new Set();
+  waiters.add(resolveDialog);
+  dialogOpenWaitersByTab.set(tabId, waiters);
+  if (jsDialogsByTab.has(tabId)) resolveDialog(jsDialogsByTab.get(tabId));
+  const command = sendPointerCdp(tabId, "Input.dispatchMouseEvent", params, expectedDocumentId);
+  try {
+    const outcome = await Promise.race([
+      command.then(() => ({ dialogOpened: false })),
+      dialogOpened.then((dialog) => ({ dialogOpened: true, dialog }))
+    ]);
+    if (outcome.dialogOpened) command.catch(() => {});
+    return outcome;
+  } finally {
+    waiters.delete(resolveDialog);
+    if (waiters.size === 0) dialogOpenWaitersByTab.delete(tabId);
+  }
 }
 
 async function fillLocator(tabId, locator, value) {
@@ -782,7 +886,7 @@ function keyDefinition(key) {
 }
 
 function capabilityList() {
-  return ["tabs", "tabGroups", "navigation", "domSnapshot", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "downloads", "history", "bookmarks", "cdp", "events"];
+  return ["tabs", "tabGroups", "navigation", "domSnapshot", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
 }
 
 function requireTabId(params) {

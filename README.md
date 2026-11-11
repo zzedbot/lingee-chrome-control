@@ -99,6 +99,25 @@ npm.cmd run test:chrome:foreign-frame
 
 The foreign-frame command fails rather than reporting success when the URL is omitted, so the core regression cannot be accidentally skipped. The fixture reports its own frame-neutralization state as visible text; verification uses `browser.readText` and does not require a raw CDP call or a policy change.
 
+### Full web and KDesign fixture
+
+`test/web-fixture` is a deterministic React 17 site using the inspected `@kdcloudjs/kdesign` 1.8.74 release. It includes native targets for every visible standard Bridge operation, a real KDesign component matrix, and KDesign Pro-style login, workbench, list, form, detail-flow, and report pages.
+
+Build the site and validate that every registered standard capability has a test case:
+
+```powershell
+npm.cmd run test:web:build
+npm.cmd test
+```
+
+Run the complete high-level Bridge scenario against an existing Chrome session:
+
+```powershell
+npm.cmd run test:web:chrome
+```
+
+The Chrome run requires exactly one selected Bridge instance and an already approved `127.0.0.1` host. It never mutates policy. When sensitive metadata is disabled, it validates the approval gate instead of enabling history, bookmark, or download access. See [the fixture guide](test/web-fixture/README.md) for routes and manual usage.
+
 ## MCP configuration
 
 Use the absolute path to `src/mcp-server.mjs`:

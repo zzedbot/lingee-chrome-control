@@ -72,6 +72,8 @@ The explicit `UNIVERSAL_BROWSER_INSTANCE_ID` selection mechanism corresponds to 
 
 `src/mcp-server.mjs` implements MCP over stdio. It never receives browser credentials. It maps narrowly described tools to bridge methods and converts screenshots to MCP image content.
 
+The standard high-level surface is declared once in `skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs`. The repository MCP adapter imports its schemas directly, and the installed Skill CLI imports the same bundled module for its fail-closed method gate. Contract tests render the documented tool mapping from that registry and reject MCP, CLI, or documentation drift. Raw CDP and unknown methods are intentionally absent.
+
 ### Policy
 
 The Native Host is the authoritative enforcement point. Before forwarding a page command it resolves the tab's current URL and checks the effective site policy. Raw CDP uses a separate method allowlist. History, bookmark, and download metadata has an independent off-by-default switch.

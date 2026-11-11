@@ -1,0 +1,1 @@
+Lingee Chrome Control deterministic upload fixture.

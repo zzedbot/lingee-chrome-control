@@ -1,0 +1,279 @@
+import assert from "node:assert/strict";
+import { createReadStream } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+import http from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { connectBridge, listBridgeInstances } from "../src/bridge-client.mjs";
+import { coveredMethods } from "../test/web-fixture/capability-cases.mjs";
+import { STANDARD_CAPABILITIES } from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
+
+const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const fixtureRoot = path.join(repoRoot, "test", "web-fixture");
+const distRoot = path.join(fixtureRoot, "dist");
+await access(path.join(distRoot, "index.html"));
+
+const instances = await listBridgeInstances();
+const requestedInstanceId = process.env.UNIVERSAL_BROWSER_INSTANCE_ID;
+const selected = requestedInstanceId
+  ? instances.find(({ instanceId }) => instanceId === requestedInstanceId)
+  : instances.length === 1 ? instances[0] : undefined;
+if (!selected) throw new Error(requestedInstanceId
+  ? `Bridge instance ${requestedInstanceId} is not running`
+  : `Expected exactly one Bridge instance; found ${instances.length}. Set UNIVERSAL_BROWSER_INSTANCE_ID.`);
+
+const bridge = await connectBridge({ instanceId: selected.instanceId });
+const server = http.createServer(serveFixture);
+await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+
+const baseUrl = `http://127.0.0.1:${server.address().port}`;
+const policy = await bridge.call("policy.get", {});
+if (!hostAllowed(policy, "127.0.0.1")) {
+  server.close();
+  throw Object.assign(new Error("Approve the exact host 127.0.0.1 and its subdomains before running the web fixture; the runner never changes policy."), { code: "SITE_APPROVAL_REQUIRED" });
+}
+
+let tabId;
+let childTabId;
+const checks = [];
+let stage = "start";
+try {
+  await checked("bridge.getInfo", () => bridge.call("bridge.getInfo", {}));
+  await checked("browser.getInfo", () => bridge.call("browser.getInfo", {}));
+  await checked("browser.listTabs", () => bridge.call("browser.listTabs", {}));
+
+  const tab = await checked("browser.openTab", () => openFixtureTab(`${baseUrl}/#/lab`, true));
+  tabId = tab.id;
+  await waitForComplete(tabId);
+  await checked("browser.getTab", () => bridge.call("browser.getTab", { tabId }));
+  await checked("browser.activateTab", () => bridge.call("browser.activateTab", { tabId }));
+  await checked("browser.claimTab", () => bridge.call("browser.claimTab", { tabId }));
+
+  const text = await checked("browser.readText", () => bridge.call("browser.readText", { tabId, maxChars: 10000 }));
+  assert.match(text.text, /全能力实验室/);
+  const snapshot = await checked("browser.domSnapshot", () => bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000, maxTextChars: 20000 }));
+  assert.ok(snapshot.nodes.some(({ selector }) => selector === "#native-click"));
+  const ax = await checked("browser.accessibilitySnapshot", () => bridge.call("browser.accessibilitySnapshot", { tabId }));
+  assert.ok(ax);
+  const screenshot = await checked("browser.screenshot", () => bridge.call("browser.screenshot", { tabId, format: "png" }));
+  assert.match(screenshot.mimeType, /^image\/png$/);
+  assert.ok(screenshot.data.length > 1000);
+
+  await checked("browser.click", () => bridge.call("browser.click", { tabId, locator: { testId: "native-click" } }));
+  await expectText(/native-click:ok/);
+  await checked("browser.fill", () => bridge.call("browser.fill", { tabId, locator: { testId: "native-fill" }, value: "Lingee Fill" }));
+  await checked("browser.click-focus", () => bridge.call("browser.click", { tabId, locator: { testId: "native-key" } }));
+  await checked("browser.press", () => bridge.call("browser.press", { tabId, key: "Enter" }));
+  await checked("browser.click-type-focus", () => bridge.call("browser.click", { tabId, locator: { testId: "native-type" } }));
+  await checked("browser.type", () => bridge.call("browser.type", { tabId, text: "Lingee Type" }));
+  await expectText(/fill=Lingee Fill.*type=Lingee Type.*key=Enter/s);
+
+  const coordinate = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#coordinate-target");
+  const coordinatePoint = center(coordinate);
+  await checked("browser.mouseMove", () => bridge.call("browser.mouseMove", { tabId, ...coordinatePoint }));
+  await checked("browser.coordinateClick", () => bridge.call("browser.coordinateClick", { tabId, ...coordinatePoint }));
+  await expectText(/coordinate:/);
+  const handle = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#drag-handle");
+  await checked("browser.drag", () => bridge.call("browser.drag", { tabId, from: center(handle), to: { x: center(handle).x + 180, y: center(handle).y }, steps: 12 }));
+  await expectText(/drag=(1[0-9]{2}|2[0-9]{2})/);
+
+  await checked("browser.scroll", () => bridge.call("browser.scroll", { tabId, deltaY: 500 }));
+  const wheelRect = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#wheel-zone");
+  await checked("browser.wheel", () => bridge.call("browser.wheel", { tabId, ...center(wheelRect), deltaY: 180 }));
+  await waitForRectMovement("#wheel-zone", wheelRect.y);
+
+  await checked("browser.scroll-long-page", () => bridge.call("browser.scroll", { tabId, deltaY: 900 }));
+  await checked("browser.click-scroll-destination", () => bridge.call("browser.click", { tabId, locator: { testId: "scroll-destination" } }));
+  await expectText(/scroll-target:ok/);
+
+  const uploadPath = path.join(fixtureRoot, "fixtures", "upload.txt");
+  await checked("browser.setFileInput", () => bridge.call("browser.setFileInput", { tabId, selector: "[data-testid='file-input']", files: [uploadPath] }));
+  await expectText(/file:upload\.txt/);
+
+  await handleTestDialog({ testId: "confirm-dialog" }, { accept: true });
+  await expectText(/dialog:accepted/);
+  await handleTestDialog({ testId: "prompt-dialog" }, { accept: true, promptText: "Lingee Prompt" });
+  await expectText(/prompt:Lingee Prompt/);
+
+  const beforeDownload = await latestEventCursor();
+  await checked("browser.click-download", () => bridge.call("browser.click", { tabId, locator: { testId: "download-link" } }));
+  const download = await waitForDownload(beforeDownload);
+  assert.equal(download.started.params.suggestedFilename, "lingee-test.txt");
+  assert.equal(download.completed.params.receivedBytes, 21);
+
+  await checked("browser.scroll-frame", () => bridge.call("browser.scroll", { tabId, deltaY: 2000 }));
+  const frameRect = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#frame-shell");
+  await checked("browser.screenshot-frame", () => bridge.call("browser.screenshot", { tabId, format: "png" }));
+  await checked("browser.coordinateClick-frame", () => bridge.call("browser.coordinateClick", { tabId, x: frameRect.x + 50, y: frameRect.y + 22 }));
+  await expectText(/frame-target:ok/);
+  await checked("browser.getEvents", () => bridge.call("browser.getEvents", { tabId, afterSequence: 0, limit: 100 }));
+
+  await checked("browser.click-navigation-link", () => bridge.call("browser.click", { tabId, locator: { testId: "navigation-link" } }));
+  await expectText(/navigation-target:ready[\s\S]*reloadCount=0/);
+  await checked("browser.back-ui-navigation", () => bridge.call("browser.back", { tabId }));
+  await expectText(/全能力实验室/);
+
+  await checked("browser.click-reload-counter", () => bridge.call("browser.click", { tabId, locator: { testId: "reload-counter" } }));
+  await waitForComplete(tabId);
+  await checked("browser.click-navigation-after-reload", () => bridge.call("browser.click", { tabId, locator: { testId: "navigation-link" } }));
+  await expectText(/navigation-target:ready[\s\S]*reloadCount=1/);
+  await checked("browser.back-after-reload", () => bridge.call("browser.back", { tabId }));
+  await expectText(/全能力实验室/);
+
+  const existingTabIds = new Set((await bridge.call("browser.listTabs", {})).map(({ id }) => id));
+  await checked("browser.click-new-tab-link", () => bridge.call("browser.click", { tabId, locator: { testId: "new-tab-link" } }));
+  const clickedChild = await waitForNewTab(existingTabIds, `${baseUrl}/?child=1#/target`);
+  childTabId = clickedChild.id;
+  const childText = await bridge.call("browser.readText", { tabId: childTabId, maxChars: 3000 });
+  assert.match(childText.text, /navigation-target:ready/);
+  await bridge.call("browser.closeTab", { tabId: childTabId });
+  childTabId = undefined;
+  await bridge.call("browser.activateTab", { tabId });
+
+  await checked("browser.navigate", () => bridge.call("browser.navigate", { tabId, url: `${baseUrl}/#/target` }));
+  await waitForComplete(tabId); await expectText(/navigation-target:ready/);
+  await checked("browser.back", () => bridge.call("browser.back", { tabId }));
+  await expectText(/全能力实验室/);
+  await checked("browser.forward", () => bridge.call("browser.forward", { tabId }));
+  await expectText(/navigation-target:ready/);
+  await checked("browser.reload", () => bridge.call("browser.reload", { tabId }));
+  await waitForComplete(tabId); await expectText(/navigation-target:ready/);
+
+  const child = await checked("browser.openTab-child", () => openFixtureTab(`${baseUrl}/#/kdesign`, false));
+  childTabId = child.id;
+  await waitForComplete(childTabId);
+  await checked("browser.groupTabs", () => bridge.call("browser.groupTabs", { tabIds: [tabId, childTabId], title: "Lingee Web Fixture", color: "blue", collapsed: false }));
+
+  for (const method of ["browser.historySearch", "browser.bookmarkSearch", "browser.downloadsSearch"]) {
+    await checked(method, async () => {
+      try {
+        return await bridge.call(method, method === "browser.bookmarkSearch" ? { text: "lingee-fixture-no-match" } : { query: { text: "lingee-fixture-no-match" }, text: "lingee-fixture-no-match", maxResults: 5 });
+      } catch (error) {
+        if (!policy.allowSensitiveMetadata) assert.equal(error.code, "SENSITIVE_METADATA_APPROVAL_REQUIRED");
+        else throw error;
+        return { approvalGateVerified: true };
+      }
+    });
+  }
+
+  const expected = new Set(["instances", ...STANDARD_CAPABILITIES.map(({ method }) => method).filter(Boolean)]);
+  assert.deepEqual([...coveredMethods()].sort(), [...expected].sort());
+  process.stdout.write(`${JSON.stringify({ ok: true, instanceId: selected.instanceId, baseUrl, checks, sensitiveMetadataEnabled: Boolean(policy.allowSensitiveMetadata) }, null, 2)}\n`);
+} catch (error) {
+  error.message = `${stage}: ${error.message}`;
+  throw error;
+} finally {
+  if (childTabId != null) await bridge.call("browser.closeTab", { tabId: childTabId }).catch(() => {});
+  if (tabId != null) {
+    await bridge.call("browser.detachTab", { tabId }).catch(() => {});
+    await bridge.call("browser.closeTab", { tabId }).catch(() => {});
+  }
+  server.closeIdleConnections?.(); server.closeAllConnections?.();
+  await new Promise((resolve) => server.close(resolve));
+}
+
+async function checked(name, action) { stage = name; const result = await action(); checks.push(name); return result; }
+async function openFixtureTab(url, active) {
+  let lastError;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try { return await bridge.call("browser.openTab", { url, active }); }
+    catch (error) {
+      lastError = error;
+      if (!/Tabs cannot be edited right now/i.test(error.message) || attempt === 3) throw error;
+      await delay(250 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+async function handleTestDialog(locator, dialog) {
+  const before = await latestEventCursor();
+  stage = "browser.click-dialog";
+  const clickPromise = bridge.call("browser.click", { tabId, locator }, { timeoutMs: 60000 });
+  await waitForDialog(before);
+  const activeDialog = await checked("browser.getDialog", () => bridge.call("browser.getDialog", { tabId }));
+  if (!activeDialog?.id) throw new Error("JavaScript dialog opened without a registered dialog identity");
+  await checked("browser.handleDialog", () => bridge.call("browser.handleDialog", { tabId, dialogId: activeDialog.id, ...dialog }));
+  const clickResult = await clickPromise;
+  if (clickResult.dialogOpened !== true || clickResult.dialog?.id !== activeDialog.id) {
+    throw new Error("The click result was not bound to the handled JavaScript dialog");
+  }
+  checks.push("browser.click-dialog");
+}
+async function waitForDialog(afterSequence, timeoutMs = 10000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const result = await bridge.call("browser.getEvents", { tabId, afterSequence, limit: 100, methods: ["Page.javascriptDialogOpening"] });
+    if (result.events?.length) return result.events.at(-1);
+    await delay(50);
+  }
+  throw new Error("JavaScript dialog did not open");
+}
+async function latestEventCursor() {
+  let cursor = 0;
+  for (;;) {
+    const result = await bridge.call("browser.getEvents", { tabId, afterSequence: cursor, limit: 500 });
+    cursor = result.cursor ?? cursor;
+    if (!result.hasMore) return cursor;
+  }
+}
+async function waitForDownload(afterSequence, timeoutMs = 10000) {
+  const end = Date.now() + timeoutMs;
+  let cursor = afterSequence;
+  let started;
+  while (Date.now() < end) {
+    const result = await bridge.call("browser.getEvents", {
+      tabId,
+      afterSequence: cursor,
+      limit: 100,
+      methods: ["Page.downloadWillBegin", "Page.downloadProgress"]
+    });
+    cursor = result.cursor ?? cursor;
+    started ??= result.events?.find(({ method }) => method === "Page.downloadWillBegin");
+    const completed = result.events?.find(({ method, params }) => method === "Page.downloadProgress" && params?.state === "completed");
+    if (started && completed) return { started, completed };
+    await delay(50);
+  }
+  throw new Error("Download did not reach completed state");
+}
+async function waitForNewTab(existingTabIds, expectedUrl, timeoutMs = 10000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const tabs = await bridge.call("browser.listTabs", {});
+    const created = tabs.find(({ id, url }) => !existingTabIds.has(id) && url === expectedUrl);
+    if (created) return created;
+    await delay(50);
+  }
+  throw new Error(`New tab did not open at ${expectedUrl}`);
+}
+async function waitForComplete(id, timeoutMs = 10000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const tab = await bridge.call("browser.getTab", { tabId: id }); if (tab.status === "complete") return; await delay(50); } throw new Error(`Tab ${id} did not load`); }
+async function expectText(pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.readText", { tabId, maxChars: 20000 }); if (pattern.test(result.text)) return result; await delay(80); } throw new Error(`Text did not match ${pattern}`); }
+async function waitForRectMovement(selector, initialY, timeoutMs = 7000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const snapshot = await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 });
+    const current = nodeRect(snapshot, selector);
+    if (Math.abs(current.y - initialY) >= 20) return current;
+    await delay(80);
+  }
+  throw new Error(`${selector} did not move after wheel input`);
+}
+function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function nodeRect(snapshot, selector) { const node = snapshot.nodes.find((item) => item.selector === selector); assert.ok(node?.rect, `Missing rect for ${selector}`); return node.rect; }
+function center(rect) { return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; }
+function hostAllowed(policy, host) { if (policy.allowAll) return !policy.blockedHosts?.includes(host); return policy.allowedHosts?.some((entry) => host === entry || host.endsWith(`.${entry}`)); }
+
+async function serveFixture(request, response) {
+  const requestUrl = new URL(request.url, "http://127.0.0.1");
+  const relative = requestUrl.pathname === "/" ? "index.html" : requestUrl.pathname.slice(1);
+  const filePath = path.resolve(distRoot, relative);
+  if (filePath !== distRoot && !filePath.startsWith(`${distRoot}${path.sep}`)) { response.writeHead(403); response.end(); return; }
+  try {
+    await access(filePath);
+    response.writeHead(200, { "content-type": contentType(filePath), "cache-control": "no-store" });
+    createReadStream(filePath).pipe(response);
+  } catch {
+    const html = await readFile(path.join(distRoot, "index.html"));
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); response.end(html);
+  }
+}
+function contentType(file) { return file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".css") ? "text/css; charset=utf-8" : file.endsWith(".map") ? "application/json" : "text/html; charset=utf-8"; }

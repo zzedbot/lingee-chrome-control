@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { STANDARD_BRIDGE_METHODS } from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const invokeUrl = pathToFileURL(
@@ -250,6 +251,28 @@ test("delegates calls with exact arguments and timeout forwarding", async () => 
   );
   assert.deepEqual(connectionOptions, [{ instanceId: "chrome-a", timeoutMs: 5000 }]);
   assert.deepEqual(calls, [{ method: "browser.listTabs", params: {}, options: { timeoutMs: 5000 } }]);
+});
+
+test("Skill CLI accepts every method in the shared standard registry", async () => {
+  const { runInvocation } = await invokeModule();
+  const calls = [];
+  const deps = {
+    connectBridge: async () => ({
+      call: async (method, params) => {
+        calls.push({ method, params });
+        return method;
+      }
+    }),
+    env: { UNIVERSAL_BROWSER_INSTANCE_ID: "chrome-a" }
+  };
+
+  for (const method of STANDARD_BRIDGE_METHODS) {
+    assert.equal(
+      await runInvocation({ mode: "call", method, params: { registryProbe: true } }, deps),
+      method
+    );
+  }
+  assert.deepEqual(calls.map(({ method }) => method), [...STANDARD_BRIDGE_METHODS]);
 });
 
 test("Skill CLI blocks nonstandard browser control before discovery or connection", async () => {

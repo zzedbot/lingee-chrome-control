@@ -4,6 +4,11 @@ import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  STANDARD_BRIDGE_METHODS,
+  STANDARD_CAPABILITIES,
+  renderToolMappingTable
+} from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const skillRoot = join(repoRoot, "skills", "lingee-chrome-control");
@@ -82,15 +87,6 @@ function parseToolCatalog(reference) {
   return catalog;
 }
 
-function declaredToolMappings(source) {
-  const mappings = new Map();
-  for (const line of source.split(/\r?\n/)) {
-    const match = line.match(/tool\("([a-z0-9_]+)",\s*"[^"]*",\s*(?:null|"([A-Za-z0-9.]+)")/);
-    if (match) mappings.set(match[1], match[2] ?? "instances");
-  }
-  return mappings;
-}
-
 function parseTroubleshootingErrors(reference) {
   const section = reference.match(/^## Error handling\r?\n([\s\S]*?)(?=^## |\Z)/m)?.[1] ?? "";
   const errors = new Map();
@@ -126,6 +122,7 @@ test("skill package contains required cross-tool files", async () => {
     "scripts/doctor.mjs",
     "scripts/runtime/bridge-client.mjs",
     "scripts/runtime/runtime-paths.mjs",
+    "scripts/runtime/standard-capabilities.mjs",
     "assets/chrome-extension/manifest.json"
   ]) assert.equal(await exists(join(skillRoot, path)), true, path);
 });
@@ -160,17 +157,21 @@ test("skill bundles an exact installable copy of the Chrome extension", async ()
 });
 
 test("tool reference structurally matches MCP schemas and Bridge mappings", async () => {
-  const source = await readFile(join(repoRoot, "src/mcp-server.mjs"), "utf8");
   const reference = await readFile(join(skillRoot, "references/tools.md"), "utf8");
   const api = await readFile(join(repoRoot, "docs/API.md"), "utf8");
   const tools = await listActualMcpTools();
   const catalog = parseToolCatalog(reference);
-  const mappings = declaredToolMappings(source);
+  const mappings = new Map(STANDARD_CAPABILITIES.map(({ name, method }) => [name, method ?? "instances"]));
   const apiMethods = new Set([...api.matchAll(/`([a-z]+\.[A-Za-z][A-Za-z0-9]*)`/g)].map((match) => match[1]));
 
   assert.match(reference, /preferred MCP server is `universalChrome`/i);
   assert.deepEqual([...catalog.keys()].sort(), tools.map((tool) => tool.name).sort());
   assert.deepEqual([...mappings.keys()].sort(), tools.map((tool) => tool.name).sort());
+  assert.equal(
+    reference.match(/^## Tool mapping\r?\n([\s\S]*?)(?=^## |\Z)/m)?.[1].trim().replaceAll("\r\n", "\n"),
+    renderToolMappingTable(),
+    "documented tool table is generated from the standard capability registry"
+  );
 
   for (const tool of tools) {
     const row = catalog.get(tool.name);
@@ -185,6 +186,29 @@ test("tool reference structurally matches MCP schemas and Bridge mappings", asyn
       assert.equal(apiMethods.has(row.mapping), true, `${row.mapping} is documented in docs/API.md`);
     }
   }
+});
+
+test("standard capability registry is complete and excludes escape hatches", () => {
+  const names = new Set();
+  const methods = new Set();
+  for (const capability of STANDARD_CAPABILITIES) {
+    assert.equal(names.has(capability.name), false, `unique tool name: ${capability.name}`);
+    names.add(capability.name);
+    if (capability.method) {
+      assert.equal(methods.has(capability.method), false, `unique Bridge method: ${capability.method}`);
+      methods.add(capability.method);
+      assert.equal(STANDARD_BRIDGE_METHODS.has(capability.method), true);
+    }
+    assert.match(capability.control.scope, /^(bridge|policy|browser)$/);
+    assert.equal(typeof capability.control.requiresTabId, "boolean");
+    assert.equal(typeof capability.control.producesInput, "boolean");
+    assert.equal(typeof capability.control.sensitiveMetadata, "boolean");
+    assert.match(capability.control.timeoutCategory, /^(default|long)$/);
+    assert.equal(capability.documentation.length, 2);
+  }
+  assert.deepEqual([...STANDARD_BRIDGE_METHODS].sort(), [...methods].sort());
+  for (const forbidden of ["browser.cdp", "policy.allowCdpMethod", "Runtime.evaluate", "browser.unknownFutureEscapeHatch"])
+    assert.equal(STANDARD_BRIDGE_METHODS.has(forbidden), false, forbidden);
 });
 
 test("skill metadata and workflow expose the cross-tool contract", async () => {

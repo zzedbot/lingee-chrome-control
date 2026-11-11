@@ -163,6 +163,21 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /changeInfo\.status === "complete"[\s\S]*recoverVirtualCursor/);
   assert.match(background, /async function recoverVirtualCursor[\s\S]*CURSOR_RECOVERY_DELAYS_MS[\s\S]*rendered\?\.visible/);
   assert.match(background, /func: removeVirtualCursor/);
+  assert.match(background, /case "browser\.getDialog"[\s\S]*jsDialogsByTab\.get/);
+  assert.match(background, /case "browser\.handleDialog"[\s\S]*handleJavaScriptDialog/);
+  assert.match(background, /async function handleJavaScriptDialog[\s\S]*chrome\.debugger\.sendCommand[\s\S]*Page\.handleJavaScriptDialog[\s\S]*dialogCloseWaitersByTab/);
+  assert.match(background, /async function controlledDialogTab[\s\S]*assertTabNotBlocked[\s\S]*controlledTabs\.has[\s\S]*attachedTabs\.has/);
+  assert.match(background, /port\.onMessage\.addListener\(\(message\) => \{ void onNativeMessage\(message, port\); \}\)/, "native messages remain concurrent while a page dialog blocks the initiating click");
+  assert.match(background, /dialogHandling: "codex-lifecycle-v3"/);
+  assert.match(background, /Page\.javascriptDialogOpening[\s\S]*jsDialogsByTab\.set[\s\S]*dialogOpenWaitersByTab/);
+  assert.match(background, /Page\.javascriptDialogClosed[\s\S]*jsDialogsByTab\.delete[\s\S]*dialogCloseWaitersByTab/);
+  assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*Promise\.race[\s\S]*dialogOpened: true/);
+  assert.match(background, /const release = await dispatchMouseReleaseOrDialog[\s\S]*if \(release\.dialogOpened\) return release/);
+  assert.match(background, /frame\.documentId !== movement\.documentId[\s\S]*post-click-navigation[\s\S]*navigationStarted: true/);
+  const dialogCase = background.match(/case "browser\.handleDialog":([\s\S]*?)case "browser\.cdp":/)?.[1] || "";
+  assert.doesNotMatch(dialogCase, /authorizedTab|ensureDebugger|recoverVirtualCursor/, "dialog handling must not execute page code while JavaScript is paused");
+  const dialogHandler = background.match(/async function handleJavaScriptDialog[\s\S]*?\n\}/)?.[0] || "";
+  assert.doesNotMatch(dialogHandler, /sendCdp|ensureDebugger|recoverVirtualCursor/, "active dialog handling must go directly to the attached debugger target");
 });
 
 class FakeClassList {

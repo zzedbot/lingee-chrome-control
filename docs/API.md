@@ -64,9 +64,12 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 | `browser.wheel` | `tabId`, `x`, `y` |
 | `browser.scroll` | `tabId` and optional deltas |
 | `browser.setFileInput` | `tabId`, `selector`, `files` |
-| `browser.handleDialog` | `tabId` |
+| `browser.getDialog` | `tabId` |
+| `browser.handleDialog` | `tabId` and optional `dialogId`, `accept`, `promptText` |
 
 A locator supports `css`, `role` plus `name`, `label`, `text`, or `testId`. Locator operations reject zero matches and ambiguous matches.
+
+JavaScript dialogs follow the same lifecycle as Codex Browser Use: the extension subscribes before the triggering pointer release, records the dialog as a first-class object, and lets the click return with `dialogOpened` even if Chrome still has the input command pending. Call `browser.getDialog`, then pass its `id` to `browser.handleDialog`. Dialog handling goes directly to the already attached debugger target and waits for `Page.javascriptDialogClosed`; it does not run page scripts or cursor recovery while the modal dialog is open.
 
 Claiming a tab renders the persistent Precision Glass overlay in its top frame before the first controlled action: a centered `Lingee 正在控制` chip, a short viewport-edge sweep, and a dual-outline pointer centered in the viewport. Clicks add two rings and a center flash, wheel and scroll calls show a directional capsule beside the pointer, and drag shows an origin dot and tether. Navigation rebuilds and recenters the overlay. It has no hit testing, restores itself if its host is removed, and remains visible until `browser.detachTab`. Restricted browser pages may accept CDP input while rejecting overlay injection; in that case the action still runs without the visual pointer.
 
@@ -80,6 +83,8 @@ Claiming a tab renders the persistent Precision Glass overlay in its top frame b
 Only CDP methods in `policy.allowedCdpMethods` are accepted. Event results contain `cursor`, `hasMore`, and `truncated` fields.
 
 The `lingee-chrome-control` Skill exposes a standard high-level MCP/CLI surface. Its MCP server does not publish `policy_allow_cdp_method` or `browser_cdp`, and its bundled CLI rejects `policy.allowCdpMethod`, `browser.cdp`, unknown methods, and direct CDP method names with `NONSTANDARD_BROWSER_CONTROL_BLOCKED` before connecting to Chrome. The raw Bridge methods remain documented here for non-Skill development and are outside the Skill control contract.
+
+The standard surface has one authoritative registry at `skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs`. The MCP schemas, bundled CLI method gate, documentation mapping test, and per-method control metadata all consume this registry. Each entry records scope, required tab context, whether it produces browser input, whether it reads sensitive metadata, and its timeout category. A method absent from the registry fails closed in the Skill CLI.
 
 ## Sensitive browser metadata
 

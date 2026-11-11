@@ -2,21 +2,11 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { STANDARD_BRIDGE_METHODS } from "./runtime/standard-capabilities.mjs";
 
 const usage = "node invoke.mjs instances | node invoke.mjs call <method> [jsonParams] [--timeout-ms <ms>]";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledClientUrl = new URL("./runtime/bridge-client.mjs", import.meta.url);
-const STANDARD_BRIDGE_METHODS = new Set([
-  "bridge.getInfo",
-  "policy.get", "policy.allowHost", "policy.blockHost", "policy.setAllowAll", "policy.setSensitiveMetadata",
-  "browser.getInfo", "browser.listTabs", "browser.getTab", "browser.openTab", "browser.closeTab", "browser.activateTab",
-  "browser.claimTab", "browser.detachTab", "browser.navigate", "browser.back", "browser.forward", "browser.reload",
-  "browser.groupTabs", "browser.readText", "browser.domSnapshot", "browser.accessibilitySnapshot", "browser.screenshot",
-  "browser.click", "browser.fill", "browser.press", "browser.type", "browser.mouseMove", "browser.coordinateClick",
-  "browser.drag", "browser.wheel", "browser.scroll", "browser.setFileInput", "browser.handleDialog", "browser.getEvents",
-  "browser.historySearch", "browser.bookmarkSearch", "browser.downloadsSearch"
-]);
-
 export async function locateBridgeRoot(options = {}) {
   const env = options.env ?? process.env;
   const searched = [];

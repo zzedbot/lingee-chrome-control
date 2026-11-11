@@ -24,6 +24,7 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Chrome-to-host transport | Native Messaging over stdio | Native Messaging over stdio | Equivalent |
 | Host discovery | Codex privileged browser runtime/native pipe bridge | Descriptor-based local named pipe/Unix socket discovery | Same local-IPC role; different discovery/authentication |
 | Agent entry point | Codex privileged JavaScript runtime and `agent.browsers.*` | MCP stdio, JSON-RPC CLI, and JavaScript client | Intentionally vendor-neutral |
+| Public capability contract | Private runtime-owned capability surface | One bundled standard-capability registry drives MCP schemas and the Skill CLI gate | Lingee is public and fail-closed; protocols remain incompatible |
 | Distribution | Signed OpenAI Chrome Web Store extension and bundled proprietary plugin | Unpacked development extension plus locally built host | Production signing/update not included |
 | Extension identity | OpenAI-controlled fixed ID | ID assigned to the loaded/published independent extension | Necessarily different |
 | Native host name | `com.openai.codexextension` | `org.universal_browser.bridge` | Necessarily different |

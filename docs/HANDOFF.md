@@ -8,6 +8,9 @@
 - `extension/virtual-cursor.js` 使用封闭 Shadow DOM、无命中测试的顶层覆盖层，detach 时清理。当前 Precision Glass 实现使用按距离计算的可见移动，并由后台保存每个受控标签页最后坐标以支持导航恢复。动作与动画强绑定；覆盖层未成功绘制时动作会失败关闭。
 - 浏览器控制 Skill 已更名为 `lingee-chrome-control`，UI 显示名为 `Lingee Chrome Control`。Skill 现内置公共 Bridge Client 和 `assets/chrome-extension/` 下的完整 0.1.23 解包扩展，不再依赖源码仓库；多实例未选择时 CLI 和 doctor 均拒绝猜选。本机安装副本与仓库一致。0.1.23 Skill 强制所有浏览器控制持续使用标准高层 MCP/CLI 方法。最新版 Skill 包为 `dist/lingee-chrome-control-skill-0.1.23.zip`；独立扩展 0.1.23 ZIP 待需要时生成。
 - Skill 的标准控制契约允许高层 MCP 和 bundled CLI 两种等价调用方式，但要求整个任务期间不得切换到 raw CDP、页面脚本、DevTools、平台自带浏览器工具或其他控制适配器。标准 MCP 不发布 `browser_cdp`/`policy_allow_cdp_method`，Skill CLI 使用高层 Bridge 方法白名单并在连接 Chrome 前以 `NONSTANDARD_BROWSER_CONTROL_BLOCKED` 拒绝 raw、未知或未来未审查的方法。底层 raw Bridge API仅保留给非 Skill 开发用途。
+- 标准能力清单已收敛到 Skill 内置的 `scripts/runtime/standard-capabilities.mjs`：MCP schema、CLI 门禁和工具参考契约测试共同读取这一注册表。每项能力同时记录作用域、`tabId` 要求、输入副作用、敏感元数据要求和超时类别；新增高层能力不再维护两份手工白名单。
+- 新增 `test/web-fixture` 完整网页测试站点：固定使用 KDesign 1.8.74，包含标准能力实验室、真实 KDesign 组件矩阵和 KDesign Pro 风格的登录、工作台、列表、表单、详情流程及报表页面。`capability-cases.mjs` 与注册表做全量覆盖校验，`scripts/web-fixture-e2e.mjs` 只使用标准高层 Bridge 方法执行真实 Chrome 回归，不自行修改策略；敏感元数据关闭时验证授权门禁。
+- 网页回归已扩展为真实点击确认框与输入框、下载完成事件、长页面终点、导航链接、新标签链接、刷新计数和 iframe `Frame target` 回显；测试站点的 iframe 会把固定测试结果回传到父页，便于通过 `browser.readText` 验证。点击触发整页导航时，后台在确认 documentId 已变化后返回 `navigationStarted` 并在新文档恢复鼠标，避免把已经生效的点击因旧文档动画无法绘制而误报失败。该最后一项扩展修复已通过静态、单元和构建检查，重新加载扩展后需再执行一次 `npm run test:web:chrome` 完成真实 Chrome 终验。
 - E2E 在打开标签页前检查 Host/扩展版本及兼容性标记；输出运行版本证据。外部 frame 检查改为读取测试页自行呈现的中和状态，不调用原始 CDP。
 - 修复 onDetach 异步清理与重新 ensure 的竞态，新增等待屏障。晚到的 detach 事件会安全取消初始化，清理后可重试；不假设 Chrome 事件携带本项目世代信息。
 - 新增 `extension/monitor-injection.js`：按真实注入返回 documentId 缓存，重新枚举确认活动文档覆盖，并使用最多 20 轮、每轮 25ms 的有界稳定化重试。修复 fallback 成功仍误报失败、缓存旧 documentId 及销毁中子文档造成的瞬时误判。

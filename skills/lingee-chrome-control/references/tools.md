@@ -57,7 +57,8 @@ Do not reimplement JSON-RPC, read runtime descriptors, or supply authentication 
 | `browser_wheel` | `browser.wheel` | `tabId`, `x`, `y` | `deltaX`, `deltaY` | Wheel-dispatch acknowledgement. | Coordinates refer to the current viewport. Wheel feedback must paint before dispatch. |
 | `browser_scroll` | `browser.scroll` | `tabId` | `deltaX`, `deltaY` | Resulting page scroll coordinates. | Re-read state after scrolling. Scroll feedback must paint before the page moves. |
 | `browser_set_file_input` | `browser.setFileInput` | `tabId`, `selector`, `files` | — | File-input assignment result. | Verify the selector and exact file scope first. |
-| `browser_handle_dialog` | `browser.handleDialog` | `tabId` | `accept`, `promptText` | Dialog-handling acknowledgement. | Confirm consequential accept or dismiss choices. |
+| `browser_get_dialog` | `browser.getDialog` | `tabId` | — | Active dialog identity, type, message, URL, and prompt default, or null. | Read after an action reports dialogOpened; use its ID when handling the dialog. |
+| `browser_handle_dialog` | `browser.handleDialog` | `tabId` | `dialogId`, `accept`, `promptText` | Handled dialog identity and acknowledgement after the close event. | Confirm consequential accept or dismiss choices. Pass dialogId to reject stale dialog decisions. |
 | `browser_get_events` | `browser.getEvents` | `tabId` | `afterSequence`, `limit`, `methods` | Buffered events with cursor, pagination, and truncation state. | Continue from the returned sequence cursor. |
 | `browser_history_search` | `browser.historySearch` | — | `text`, `startTime`, `endTime`, `maxResults` | Array of Chrome history records. | Sensitive history metadata requires explicit user approval. |
 | `browser_bookmark_search` | `browser.bookmarkSearch` | — | `query`, `text` | Array of Chrome bookmark records. | Sensitive bookmark metadata requires explicit user approval. |
