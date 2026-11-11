@@ -4,6 +4,7 @@ Treat access to the user's signed-in Chrome profile as privileged automation. Pa
 
 ## Authorization contract
 
+- Lingee Build's **完全访问** mode is a local execution prerequisite for reaching the Windows named pipe; it is not authorization to access a website, tab, account, browser metadata, raw CDP method, credential, or consequential action. Explain the broader machine-access impact before asking the user to switch from **工作区内修改**, and let the user restore the narrower mode after the browser task.
 - Bind authorization to the user's stated outcome, site, tab, data, and side effect. Speed or “however you can” never expands scope.
 - Disclose that `policy_allow_host` authorizes the exact host and its subdomains, then obtain explicit, specific approval for that scope. A blocklist takes precedence over the allowlist and `allowAll`.
 - Keep `policy_set_allow_all` disabled; it requires explicit user approval for the global scope.

@@ -94,9 +94,55 @@ test("reports zero instances without connecting or starting a process", async ()
 
   const report = await runDiagnostics(dependencies);
 
-  assert.deepEqual(report.instances, { ok: false, count: 0 });
+  assert.deepEqual(report.instances, { ok: false, count: 0, code: "BRIDGE_NOT_FOUND" });
   assert.deepEqual(report.connection, { ok: false, skipped: true, reason: "no bridge instances found" });
   assert.equal(connectCalls, 0);
+  assert.equal(report.ok, false);
+});
+
+test("reports sanitized pipe probe failures when descriptors exist", async () => {
+  const { runDiagnostics } = await doctorModule();
+  const dependencies = diagnosticDependencies({
+    resolveClient: async () => ({ source: "injected", client: {
+      listBridgeInstances: async () => [],
+      diagnoseBridgeInstances: async () => ({
+        runtimeDirectory: "C:\\Users\\tester\\AppData\\Local\\UniversalBrowserBridge\\runtime",
+        descriptorCount: 1,
+        connectableCount: 0,
+        probe: { attempts: 3, timeoutMs: 1000, retryDelayMs: 100 },
+        instances: [],
+        descriptors: [{
+          file: "bridge-42.json",
+          instanceId: "chrome-a",
+          pid: 42,
+          endpoint: "must-not-leak",
+          token: "must-not-leak",
+          processAlive: true,
+          probe: {
+            ok: false,
+            code: "EACCES",
+            totalElapsedMs: 9,
+            attempts: [
+              { attempt: 1, ok: false, code: "EACCES", elapsedMs: 2 },
+              { attempt: 2, ok: false, code: "EACCES", elapsedMs: 3 },
+              { attempt: 3, ok: false, code: "EACCES", elapsedMs: 4 }
+            ]
+          }
+        }]
+      }),
+      connectBridge: async () => { throw new Error("must not connect"); }
+    } })
+  });
+
+  const report = await runDiagnostics(dependencies);
+
+  assert.equal(report.instances.code, "BRIDGE_PROBE_FAILED");
+  assert.equal(report.discovery.descriptorCount, 1);
+  assert.equal(report.discovery.connectableCount, 0);
+  assert.equal(report.discovery.descriptors[0].probe.code, "EACCES");
+  assert.equal(report.discovery.descriptors[0].probe.attempts.length, 3);
+  assert.doesNotMatch(JSON.stringify(report), /must-not-leak|"(?:endpoint|token)"\s*:/i);
+  assert.equal(report.connection.skipped, true);
   assert.equal(report.ok, false);
 });
 

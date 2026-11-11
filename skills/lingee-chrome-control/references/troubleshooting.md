@@ -12,7 +12,7 @@ Recover the failed layer without installing software, starting processes, mutati
 
 ## `doctor.mjs` interpretation
 
-Run `node "<skill-root>/scripts/doctor.mjs"`. It emits one JSON report and does not install software, start processes, change policy, operate a browser page, or clean stale bridge runtime descriptors. Ordinary Bridge Client connections retain their default stale-descriptor cleanup as part of connection recovery. Use the first failed check to choose exactly one next action.
+Run `node "<skill-root>/scripts/doctor.mjs"`. It emits one JSON report and does not install software, start processes, change policy, operate a browser page, or clean stale bridge runtime descriptors. Its `discovery` section reports the resolved runtime directory, descriptor and connectable counts, live-PID status, and sanitized per-attempt pipe error codes and timings. It never reports a pipe endpoint, bearer token, descriptor contents, or raw error message. Ordinary discovery retries the local pipe three times and removes a descriptor only after its recorded PID is confirmed dead. Use the first failed check to choose exactly one next action.
 
 | Failed check | Next action |
 |---|---|
@@ -20,6 +20,26 @@ Run `node "<skill-root>/scripts/doctor.mjs"`. It emits one JSON report and does 
 | `bridgeClient` | Reinstall the complete Skill package, including `scripts/runtime/` |
 | `instances` | Start Chrome and verify Native Host registration |
 | `connection` | Open extension status and verify Native Messaging connectivity |
+
+## Lingee Build permission mode on Windows
+
+Lingee Build's **工作区内修改** execution mode does not permit the task process to connect to the Bridge's Windows named pipe outside the workspace. A confirmed signature is:
+
+- `discovery.runtimeDirectory` is correct;
+- `descriptorCount` is greater than zero;
+- the descriptor's `processAlive` is `true`;
+- `connectableCount` remains zero inside Lingee Build;
+- the same descriptor is connectable from a host with unrestricted local access.
+
+Ask the user to make this change in the Lingee Build UI:
+
+1. Stop browser-control retries and open the current task or session's execution-permission menu.
+2. Change **工作区内修改** to **完全访问** and acknowledge that this grants the task broader access to the local machine.
+3. If the running task retains its old permission snapshot, start a new run or session.
+4. Run `node "<skill-root>/scripts/doctor.mjs"` again. Continue only when `connectableCount >= 1`, `instances.ok = true`, and `extensionConnected = true`.
+5. After browser-control work, the user may restore **工作区内修改** for unrelated tasks.
+
+Do not weaken named-pipe ACLs, run as administrator, copy runtime tokens, disable the sandbox globally, or treat **完全访问** as browser/site authorization. Host allowlists, sensitive-metadata gates, CDP restrictions, authentication boundaries, and confirmation requirements remain unchanged.
 
 ## Error handling
 
@@ -32,6 +52,7 @@ Run `node "<skill-root>/scripts/doctor.mjs"`. It emits one JSON report and does 
 | `BRIDGE_INSTANCES_INVALID` | The Bridge Client returned an instance list that is not an array. | Stop and verify the repository and Bridge Client versions match before listing instances again. |
 | `BRIDGE_INSTANCE_SELECTION_REQUIRED` | More than one live Chrome Bridge instance exists and none was selected. | Ask the user which Chrome instance to use, then set `UNIVERSAL_BROWSER_INSTANCE_ID`; do not infer a profile from tab titles. |
 | `BRIDGE_NOT_FOUND` | No live Native Host descriptor was discovered for the selected instance. | Ask the user to open Chrome with the approved bridge extension enabled. Use the extension popup's Reconnect control or restart Chrome, then list instances again. Do not install or enable components without authorization. |
+| `BRIDGE_PROBE_FAILED` | One or more runtime descriptors exist, but every sanitized local-pipe probe failed after retries. | Read `discovery.descriptors[].probe.attempts`: `PIPE_PROBE_TIMEOUT` indicates timeout; `EACCES`/`EPERM` indicates an execution identity or sandbox boundary; `ENOENT` indicates the named pipe is absent. In Lingee Build on Windows, if the descriptor exists and its PID is alive, guide the user from **工作区内修改** to **完全访问**, then start a new run if necessary and rerun `node "<skill-root>/scripts/doctor.mjs"`. Preserve the descriptor and do not call destructive discovery repeatedly. |
 | `EXTENSION_NOT_READY` | The Native Host exists, but the Chrome extension handshake is incomplete. | Ask the user to verify the expected profile and extension, reconnect, then repeat `bridge_status`. |
 | `AUTH_FAILED` | The runtime descriptor token is missing, invalid, stale, or inconsistent. | Never manufacture, copy, edit, or expose a token. Ask the user to reconnect the extension or restart Chrome so the legitimate host regenerates state. |
 | `SITE_APPROVAL_REQUIRED` | The target host is not allowed by the effective policy. | Name the exact host and request approval before `policy_allow_host`. Do not substitute `policy_set_allow_all`. |

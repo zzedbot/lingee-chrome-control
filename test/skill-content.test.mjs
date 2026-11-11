@@ -397,3 +397,17 @@ test("public skill does not depend on Codex-private browser runtime identifiers"
   const withoutComparisonNotes = packageText.replace(/^## Comparison note\b[\s\S]*?(?=^## |\Z)/gim, "");
   assert.doesNotMatch(withoutComparisonNotes, /browser-client\.mjs|agent\.browsers|node_repl|mcp__node_repl/i);
 });
+
+test("Lingee Build permission guidance explains named-pipe access without broadening browser authorization", async () => {
+  const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
+  const troubleshooting = await readFile(join(skillRoot, "references", "troubleshooting.md"), "utf8");
+  const security = await readFile(join(skillRoot, "references", "security.md"), "utf8");
+  const combined = `${skill}\n${troubleshooting}\n${security}`;
+
+  assert.match(combined, /工作区内修改/);
+  assert.match(combined, /完全访问/);
+  assert.match(combined, /Windows named pipe|Windows 命名管道/i);
+  assert.match(combined, /does not approve|not authorization|不是.*授权/i);
+  assert.match(troubleshooting, /start a new run or session|新.*运行|新.*会话/i);
+  assert.match(troubleshooting, /restore.*工作区内修改|恢复.*工作区内修改/i);
+});

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { connectBridge, listBridgeInstances } from "../src/bridge-client.mjs";
+import { connectBridge, diagnoseBridgeInstances, listBridgeInstances } from "../src/bridge-client.mjs";
 
 test("read-only discovery retains an unreachable runtime descriptor", async () => {
   await withRuntimeDirectory(async (runtimeDirectory) => {
@@ -16,10 +16,44 @@ test("read-only discovery retains an unreachable runtime descriptor", async () =
 
 test("ordinary discovery removes an unreachable runtime descriptor by default", async () => {
   await withRuntimeDirectory(async (runtimeDirectory) => {
-    const descriptorPath = await writeUnreachableDescriptor(runtimeDirectory);
+    const descriptorPath = await writeUnreachableDescriptor(runtimeDirectory, { pid: 99999999 });
 
     assert.deepEqual(await listBridgeInstances(), []);
     await assert.rejects(() => fs.access(descriptorPath), { code: "ENOENT" });
+  });
+});
+
+test("ordinary discovery preserves an unreachable descriptor while its host pid is alive", async () => {
+  await withRuntimeDirectory(async (runtimeDirectory) => {
+    const descriptorPath = await writeUnreachableDescriptor(runtimeDirectory, { pid: process.pid });
+
+    assert.deepEqual(await listBridgeInstances(), []);
+    await fs.access(descriptorPath);
+  });
+});
+
+test("diagnostics report sanitized retry evidence without endpoint or token", async () => {
+  await withRuntimeDirectory(async (runtimeDirectory) => {
+    await writeUnreachableDescriptor(runtimeDirectory, {
+      pid: process.pid,
+      endpoint: "",
+      token: "must-not-leak"
+    });
+
+    const report = await diagnoseBridgeInstances();
+
+    assert.equal(report.descriptorCount, 1);
+    assert.equal(report.connectableCount, 0);
+    assert.equal(report.probe.attempts, 3);
+    assert.equal(report.probe.timeoutMs, 1000);
+    assert.equal(report.descriptors[0].processAlive, true);
+    assert.deepEqual(report.descriptors[0].probe, {
+      ok: false,
+      code: "MISSING_ENDPOINT",
+      totalElapsedMs: 0,
+      attempts: [{ attempt: 1, ok: false, code: "MISSING_ENDPOINT", elapsedMs: 0 }]
+    });
+    assert.doesNotMatch(JSON.stringify(report), /must-not-leak|"(?:endpoint|token)"\s*:/i);
   });
 });
 
@@ -50,8 +84,13 @@ async function withRuntimeDirectory(run) {
   }
 }
 
-async function writeUnreachableDescriptor(runtimeDirectory) {
+async function writeUnreachableDescriptor(runtimeDirectory, overrides = {}) {
   const descriptorPath = path.join(runtimeDirectory, "bridge-1.json");
-  await fs.writeFile(descriptorPath, JSON.stringify({ instanceId: "stale", endpoint: "" }));
+  await fs.writeFile(descriptorPath, JSON.stringify({
+    instanceId: "stale",
+    pid: 99999999,
+    endpoint: "",
+    ...overrides
+  }));
   return descriptorPath;
 }
