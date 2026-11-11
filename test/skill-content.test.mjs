@@ -202,7 +202,8 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
   assert.doesNotMatch(skill, /scripts\/diagnose\.mjs/);
   assert.match(skill, /resolve CLI entrypoints from the loaded Skill root/i);
   assert.match(skill, /Preserve visible pointer behavior/i);
-  assert.match(skill, /Do not substitute `browser\.cdp` with `Runtime\.evaluate`/i);
+  assert.match(skill, /standard-control invariant/i);
+  assert.match(skill, /For the entire task[\s\S]*Never switch to raw CDP/i);
 
   const orderedDecisions = [
     "explicit Chrome intent",
@@ -226,7 +227,7 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
 
   assert.match(metadata, /display_name: "Lingee Chrome Control"/);
   assert.match(metadata, /short_description: "通过 Lingee Bridge 安全控制现有 Chrome"/);
-  assert.match(metadata, /default_prompt: "Use \$lingee-chrome-control to inspect and safely operate my existing Chrome tab\."/);
+  assert.match(metadata, /default_prompt: "Use \$lingee-chrome-control standard high-level MCP or CLI methods exclusively[^"]*never use raw CDP or page scripts\."/);
 });
 
 test("security contract requires approval and forbids secret-store access", async () => {
@@ -237,8 +238,6 @@ test("security contract requires approval and forbids secret-store access", asyn
   for (const name of [
     "policy_set_allow_all",
     "policy_set_sensitive_metadata",
-    "policy_allow_cdp_method",
-    "browser_cdp",
     "browser_history_search",
     "browser_bookmark_search",
     "browser_downloads_search"
@@ -258,8 +257,23 @@ test("skill keeps visible interactions on pointer-aware bridge methods", async (
   const tools = await readFile(join(skillRoot, "references/tools.md"), "utf8");
   for (const method of ["browser.click", "browser.fill", "browser.mouseMove", "browser.coordinateClick", "browser.drag", "browser.wheel", "browser.scroll"])
     assert.match(skill, new RegExp(method.replace(".", "\\.")));
-  assert.match(`${skill}\n${tools}`, /DOM `\.click\(\)`[^\n]*bypass(?:es)? (?:the )?(?:virtual )?pointer/i);
-  assert.match(tools, /script scrolling[^\n]*bypass(?:es)? pointer feedback/i);
+  assert.match(`${skill}\n${tools}`, /DOM `\.click\(\)`[^\n]*(?:bypass|Never replace)/i);
+  assert.match(`${skill}\n${tools}`, /script scrolling[^\n]*bypass(?:es)? the standard control contract/i);
+});
+
+test("standard Skill surfaces exclude raw CDP and page-script escape hatches", async () => {
+  const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
+  const toolsReference = await readFile(join(skillRoot, "references/tools.md"), "utf8");
+  const security = await readFile(join(skillRoot, "references/security.md"), "utf8");
+  const tools = await listActualMcpTools();
+  const names = tools.map(({ name }) => name);
+
+  assert.equal(names.includes("browser_cdp"), false);
+  assert.equal(names.includes("policy_allow_cdp_method"), false);
+  assert.doesNotMatch(toolsReference, /^\| `(?:browser_cdp|policy_allow_cdp_method)` \|/m);
+  assert.match(skill, /MCP and CLI are equivalent compliant surfaces/i);
+  assert.match(skill, /If the standard surface cannot complete an action, stop and report the missing capability/i);
+  assert.match(security, /Raw CDP[^\n]*outside this Skill's standard-control contract/i);
 });
 
 test("host approval discloses and authorizes subdomain scope", async () => {

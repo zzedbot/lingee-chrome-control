@@ -197,6 +197,7 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - 覆盖层无法绘制、导航替换文档或坐标不一致时分别返回 `CURSOR_RENDER_FAILED`、`CURSOR_DOCUMENT_CHANGED`、`CURSOR_POSITION_MISMATCH`，不会继续派发对应输入。
 - 静态检查与单元测试已通过。重新加载后的实例 `8c41416b-bef1-4ccf-8fe4-2da4182263eb` 报告 Host/扩展均为 0.1.22、虚拟鼠标标记为 `overlay-v13`，标准真实 Chrome E2E 通过。
 - 针对第三方智能体可能用 raw CDP 或页面脚本绕过指针接口的问题，Skill 新增可见交互路由约束和回归测试。Skill 随后增加 `assets/chrome-extension/`，内含与仓库逐文件一致、可直接加载的完整 0.1.22 解包扩展；回归测试会核对全部 13 个扩展文件。仓库 Skill 与本机安装副本均通过 `quick_validate.py`，新包 `dist/lingee-chrome-control-skill-0.1.22.zip` 包含 22 个预期文件。
+- 标准控制契约进一步改为可执行门禁：MCP 工具列表不再暴露 raw CDP 和 CDP allowlist mutation；bundled CLI 对 `browser.cdp`、`policy.allowCdpMethod`、直接 CDP 名称和未知 Bridge 方法在实例发现与连接前失败关闭。新增测试验证 MCP/CLI 两条标准路径均不存在 raw 逃逸口，并要求长任务、上下文压缩、重试和恢复后继续遵守同一控制面。
 
 本轮公开桥接口读取结果：
 

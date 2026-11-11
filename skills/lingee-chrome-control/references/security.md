@@ -4,12 +4,12 @@ Treat access to the user's signed-in Chrome profile as privileged automation. Pa
 
 ## Authorization contract
 
-- Lingee Build's **完全访问** mode is a local execution prerequisite for reaching the Windows named pipe; it is not authorization to access a website, tab, account, browser metadata, raw CDP method, credential, or consequential action. Explain the broader machine-access impact before asking the user to switch from **工作区内修改**, and let the user restore the narrower mode after the browser task.
+- Lingee Build's **完全访问** mode is a local execution prerequisite for reaching the Windows named pipe; it is not authorization to access a website, tab, account, browser metadata, credential, or consequential action. Explain the broader machine-access impact before asking the user to switch from **工作区内修改**, and let the user restore the narrower mode after the browser task.
 - Bind authorization to the user's stated outcome, site, tab, data, and side effect. Speed or “however you can” never expands scope.
 - Disclose that `policy_allow_host` authorizes the exact host and its subdomains, then obtain explicit, specific approval for that scope. A blocklist takes precedence over the allowlist and `allowAll`.
 - Keep `policy_set_allow_all` disabled; it requires explicit user approval for the global scope.
 - Keep `policy_set_sensitive_metadata` disabled; enabling it and calling `browser_history_search`, `browser_bookmark_search`, or `browser_downloads_search` requires explicit user approval.
-- Add a method with `policy_allow_cdp_method`, or call it with `browser_cdp`, only after explicit user approval and a method-specific impact review.
+- Raw CDP, CDP allowlist mutation, page JavaScript, DOM event synthesis, DevTools, and other browser-control surfaces are outside this Skill's standard-control contract. Do not use them even as a fallback; report a missing standard capability instead.
 - `browser_claim_tab` may neutralize `chrome-extension://` iframe/frame content injected by another extension, but only inside the explicitly controlled tab. It does not read or return that frame's URL or contents. Detaching stops the monitor; reloading afterward lets the owning extension rebuild its UI.
 - Ask for immediate, exact confirmation before sending messages, purchases, financial actions, account changes, deletion, or publishing. The project does not provide a native consent UI for these classes.
 

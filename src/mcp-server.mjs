@@ -89,7 +89,6 @@ function buildTools() {
     tool("policy_block_host", "Block an HTTP(S) host and its subdomains.", "policy.blockHost", object({ host: { type: "string" } }, ["host"])),
     tool("policy_set_allow_all", "Enable or disable access to all sites. Use only with explicit user approval.", "policy.setAllowAll", object({ enabled: { type: "boolean" } }, ["enabled"])),
     tool("policy_set_sensitive_metadata", "Enable or disable history, bookmark, and download metadata access.", "policy.setSensitiveMetadata", object({ enabled: { type: "boolean" } }, ["enabled"])),
-    tool("policy_allow_cdp_method", "Add a Chrome DevTools Protocol method to the local allowlist.", "policy.allowCdpMethod", object({ command: { type: "string" } }, ["command"])),
     tool("browser_get_info", "Get browser backend identity and capabilities.", "browser.getInfo", object()),
     tool("browser_list_tabs", "List tabs. Details for unapproved sites are redacted.", "browser.listTabs", object({ query: { type: "object", additionalProperties: true } })),
     tool("browser_get_tab", "Get one tab. Details for an unapproved site are redacted.", "browser.getTab", object(tabId, ["tabId"])),
@@ -119,7 +118,6 @@ function buildTools() {
     tool("browser_set_file_input", "Set files on a CSS-selected file input.", "browser.setFileInput", object({ ...tabId, selector: { type: "string" }, files: { type: "array", items: { type: "string" }, minItems: 1 } }, ["tabId", "selector", "files"])),
     tool("browser_handle_dialog", "Accept or dismiss a JavaScript dialog.", "browser.handleDialog", object({ ...tabId, accept: { type: "boolean" }, promptText: { type: "string" } }, ["tabId"])),
     tool("browser_get_events", "Read buffered debugger events using a sequence cursor.", "browser.getEvents", object({ tabId: { type: "integer" }, afterSequence: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 500 }, methods: { type: "array", items: { type: "string" } } }, ["tabId"])),
-    tool("browser_cdp", "Send a policy-allowlisted raw CDP command to an approved tab. Never use Runtime.evaluate, DOM click, synthetic events, or script scrolling to replace a user-visible pointer interaction because raw CDP bypasses virtual-pointer feedback.", "browser.cdp", object({ ...tabId, command: { type: "string" }, params: { type: "object", additionalProperties: true } }, ["tabId", "command"])),
     tool("browser_history_search", "Search browser history when sensitive metadata access is enabled.", "browser.historySearch", object({ text: { type: "string" }, startTime: { type: "number" }, endTime: { type: "number" }, maxResults: { type: "integer" } })),
     tool("browser_bookmark_search", "Search bookmarks when sensitive metadata access is enabled.", "browser.bookmarkSearch", object({ query: { oneOf: [{ type: "string" }, { type: "object", additionalProperties: true }] }, text: { type: "string" } })),
     tool("browser_downloads_search", "Search download metadata when sensitive metadata access is enabled.", "browser.downloadsSearch", object({ query: { type: "object", additionalProperties: true } }))

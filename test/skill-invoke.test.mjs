@@ -252,6 +252,28 @@ test("delegates calls with exact arguments and timeout forwarding", async () => 
   assert.deepEqual(calls, [{ method: "browser.listTabs", params: {}, options: { timeoutMs: 5000 } }]);
 });
 
+test("Skill CLI blocks nonstandard browser control before discovery or connection", async () => {
+  const { runInvocation } = await invokeModule();
+  for (const method of ["browser.cdp", "policy.allowCdpMethod", "Runtime.evaluate", "browser.unknownFutureEscapeHatch"]) {
+    let discoveryCalls = 0;
+    let connectCalls = 0;
+    await assert.rejects(
+      () => runInvocation(
+        { mode: "call", method, params: {} },
+        {
+          connectBridge: async () => { connectCalls += 1; },
+          listBridgeInstances: async () => { discoveryCalls += 1; return []; },
+          env: {}
+        }
+      ),
+      (error) => error.code === "NONSTANDARD_BROWSER_CONTROL_BLOCKED"
+        && error.details?.method === method
+    );
+    assert.equal(discoveryCalls, 0, `${method} is blocked before instance discovery`);
+    assert.equal(connectCalls, 0, `${method} is blocked before bridge connection`);
+  }
+});
+
 test("call refuses to guess when multiple bridge instances are running", async () => {
   const { runInvocation } = await invokeModule();
   let connectCalls = 0;

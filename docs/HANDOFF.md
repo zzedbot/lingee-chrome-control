@@ -7,6 +7,7 @@
 - `src/version.mjs` 让 Host/MCP 版本统一来自 package.json；0.1.22 使用 `overlay-v13` 标记。安装器使用带构建哈希的文件名，避免覆盖运行中的旧文件。
 - `extension/virtual-cursor.js` 使用封闭 Shadow DOM、无命中测试的顶层覆盖层，detach 时清理。当前 Precision Glass 实现使用按距离计算的可见移动，并由后台保存每个受控标签页最后坐标以支持导航恢复。动作与动画强绑定；覆盖层未成功绘制时动作会失败关闭。
 - 浏览器控制 Skill 已更名为 `lingee-chrome-control`，UI 显示名为 `Lingee Chrome Control`。Skill 现内置公共 Bridge Client 和 `assets/chrome-extension/` 下的完整 0.1.22 解包扩展，不再依赖源码仓库；多实例未选择时 CLI 和 doctor 均拒绝猜选。本机安装副本与仓库一致。0.1.22 Skill 明确要求所有用户可见鼠标交互走指针感知的高层方法，禁止用 raw CDP、DOM `.click()`、合成事件、脚本滚动或直接导航替代。最新版 Skill 包为 `dist/lingee-chrome-control-skill-0.1.22.zip`；独立扩展 0.1.22 ZIP 待需要时生成。
+- Skill 的标准控制契约允许高层 MCP 和 bundled CLI 两种等价调用方式，但要求整个任务期间不得切换到 raw CDP、页面脚本、DevTools、平台自带浏览器工具或其他控制适配器。标准 MCP 不发布 `browser_cdp`/`policy_allow_cdp_method`，Skill CLI 使用高层 Bridge 方法白名单并在连接 Chrome 前以 `NONSTANDARD_BROWSER_CONTROL_BLOCKED` 拒绝 raw、未知或未来未审查的方法。底层 raw Bridge API仅保留给非 Skill 开发用途。
 - E2E 在打开标签页前检查 Host/扩展版本及兼容性标记；输出运行版本证据。外部 frame 检查改为读取测试页自行呈现的中和状态，不调用原始 CDP。
 - 修复 onDetach 异步清理与重新 ensure 的竞态，新增等待屏障。晚到的 detach 事件会安全取消初始化，清理后可重试；不假设 Chrome 事件携带本项目世代信息。
 - 新增 `extension/monitor-injection.js`：按真实注入返回 documentId 缓存，重新枚举确认活动文档覆盖，并使用最多 20 轮、每轮 25ms 的有界稳定化重试。修复 fallback 成功仍误报失败、缓存旧 documentId 及销毁中子文档造成的瞬时误判。

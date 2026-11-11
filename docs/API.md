@@ -79,6 +79,8 @@ Claiming a tab renders the persistent Precision Glass overlay in its top frame b
 
 Only CDP methods in `policy.allowedCdpMethods` are accepted. Event results contain `cursor`, `hasMore`, and `truncated` fields.
 
+The `lingee-chrome-control` Skill exposes a standard high-level MCP/CLI surface. Its MCP server does not publish `policy_allow_cdp_method` or `browser_cdp`, and its bundled CLI rejects `policy.allowCdpMethod`, `browser.cdp`, unknown methods, and direct CDP method names with `NONSTANDARD_BROWSER_CONTROL_BLOCKED` before connecting to Chrome. The raw Bridge methods remain documented here for non-Skill development and are outside the Skill control contract.
+
 ## Sensitive browser metadata
 
 | Method | Purpose |

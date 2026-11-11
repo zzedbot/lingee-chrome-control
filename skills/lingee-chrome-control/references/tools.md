@@ -1,6 +1,6 @@
 # Tool reference
 
-Use the public MCP tools when available. The preferred MCP server is `universalChrome`. Use the bundled Node CLI only when the client cannot call MCP tools; both surfaces delegate to the same public bridge methods.
+Use the public MCP tools when available. The preferred MCP server is `universalChrome`. Use the bundled Node CLI when the client cannot call MCP tools; both are standard high-level surfaces and delegate to the same public bridge methods. Stay on one of these surfaces for the entire task. Raw CDP tools and CDP allowlist mutation are intentionally absent. Never replace a standard operation with `Runtime.evaluate`, `Runtime.callFunctionOn`, DOM `.click()`, injected or page JavaScript, synthetic events, DevTools, or another browser-control tool.
 
 `<skill-root>` below means the resolved absolute directory containing the loaded `SKILL.md`. Replace the placeholder before running a command. The CLI and its public Bridge Client runtime are bundled in the Skill, so an installed package does not need the Bridge source repository. Repository developers may explicitly set `UNIVERSAL_CHROME_BRIDGE_ROOT` to test against a verified checkout; ordinary installations should leave it unset.
 
@@ -30,7 +30,6 @@ Do not reimplement JSON-RPC, read runtime descriptors, or supply authentication 
 | `policy_block_host` | `policy.blockHost` | `host` | — | Saved effective policy. | Block the host and its subdomains; the blocklist wins. |
 | `policy_set_allow_all` | `policy.setAllowAll` | `enabled` | — | Saved effective policy. | Global site access requires explicit user approval; keep disabled by default. |
 | `policy_set_sensitive_metadata` | `policy.setSensitiveMetadata` | `enabled` | — | Saved effective policy. | History, bookmark, and download metadata access requires explicit user approval. |
-| `policy_allow_cdp_method` | `policy.allowCdpMethod` | `command` | — | Saved effective policy with the command allowlisted. | Raw CDP permission requires explicit user approval after impact review. |
 | `browser_get_info` | `browser.getInfo` | — | — | Browser backend identity, version, and capability list. | Read-only capability discovery. |
 | `browser_list_tabs` | `browser.listTabs` | — | `query` | Array of Chrome tab records. | Unapproved-site details are redacted. |
 | `browser_get_tab` | `browser.getTab` | `tabId` | — | One Chrome tab record. | Unapproved-site details are redacted. |
@@ -60,7 +59,6 @@ Do not reimplement JSON-RPC, read runtime descriptors, or supply authentication 
 | `browser_set_file_input` | `browser.setFileInput` | `tabId`, `selector`, `files` | — | File-input assignment result. | Verify the selector and exact file scope first. |
 | `browser_handle_dialog` | `browser.handleDialog` | `tabId` | `accept`, `promptText` | Dialog-handling acknowledgement. | Confirm consequential accept or dismiss choices. |
 | `browser_get_events` | `browser.getEvents` | `tabId` | `afterSequence`, `limit`, `methods` | Buffered events with cursor, pagination, and truncation state. | Continue from the returned sequence cursor. |
-| `browser_cdp` | `browser.cdp` | `tabId`, `command` | `params` | Raw CDP command result. | Allowlisted raw CDP use requires explicit user approval. Never use `Runtime.evaluate`, DOM `.click()`, synthetic events, or script scrolling to replace a visible pointer interaction because they bypass pointer feedback. |
 | `browser_history_search` | `browser.historySearch` | — | `text`, `startTime`, `endTime`, `maxResults` | Array of Chrome history records. | Sensitive history metadata requires explicit user approval. |
 | `browser_bookmark_search` | `browser.bookmarkSearch` | — | `query`, `text` | Array of Chrome bookmark records. | Sensitive bookmark metadata requires explicit user approval. |
 | `browser_downloads_search` | `browser.downloadsSearch` | — | `query` | Array of Chrome download metadata records. | Sensitive download metadata requires explicit user approval. |
