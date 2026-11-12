@@ -45,6 +45,13 @@ Do not reimplement JSON-RPC, read runtime descriptors, or supply authentication 
 | `browser_group_tabs` | `browser.groupTabs` | `tabIds` | `groupId`, `title`, `color`, `collapsed` | Chrome tab-group record. | Group only the intended tabs. |
 | `browser_read_text` | `browser.readText` | `tabId` | `maxChars` | URL, title, and bounded visible body text. | Prefer this for lightweight observation. |
 | `browser_dom_snapshot` | `browser.domSnapshot` | `tabId` | `maxNodes`, `maxTextChars` | Compact interactive DOM nodes and page metadata. | Use to construct stable locators. |
+| `browser_locator_count` | `browser.locatorCount` | `tabId`, `locator` | — | Number of elements matching the locator, including hidden elements. | Read-only; the locator must include at least one selector field. |
+| `browser_locator_all_text_contents` | `browser.locatorAllTextContents` | `tabId`, `locator` | `maxResults`, `maxCharsPerItem`, `maxTotalChars` | Bounded array of textContent strings for all matches. | Read-only; fails closed when configured result limits would be exceeded. |
+| `browser_locator_inner_text` | `browser.locatorInnerText` | `tabId`, `locator` | `maxChars` | Bounded innerText string from one unique match. | Read-only; zero and multiple matches return stable locator errors. |
+| `browser_locator_text_content` | `browser.locatorTextContent` | `tabId`, `locator` | `maxChars` | Bounded textContent string or null from one unique match. | Read-only; zero and multiple matches return stable locator errors. |
+| `browser_locator_get_attribute` | `browser.locatorGetAttribute` | `tabId`, `locator`, `name` | `maxChars` | Bounded attribute string or null from one unique match. | Read-only; does not expose properties or object handles. |
+| `browser_locator_is_visible` | `browser.locatorIsVisible` | `tabId`, `locator` | — | Boolean visibility result; false when no element matches. | Read-only; multiple matches return LOCATOR_AMBIGUOUS. |
+| `browser_locator_is_enabled` | `browser.locatorIsEnabled` | `tabId`, `locator` | — | Boolean enabled result; false when no element matches. | Read-only; honors disabled controls, aria-disabled, and disabled fieldsets. |
 | `browser_accessibility_snapshot` | `browser.accessibilitySnapshot` | `tabId` | — | Chrome accessibility tree. | Use for accessible roles, names, and state. |
 | `browser_screenshot` | `browser.screenshot` | `tabId` | `format`, `quality`, `captureBeyondViewport` | MCP image content with MIME type. | Capture sensitive visual data only when needed. |
 | `browser_click` | `browser.click` | `tabId`, `locator` | `button`, `clickCount` | Click result for the uniquely resolved element. | Use a stable visible locator and verify afterward. |

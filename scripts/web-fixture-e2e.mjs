@@ -59,6 +59,14 @@ try {
   assert.match(screenshot.mimeType, /^image\/png$/);
   assert.ok(screenshot.data.length > 1000);
 
+  assert.equal(await checked("browser.locatorCount", () => bridge.call("browser.locatorCount", { tabId, locator: { css: ".locator-query-item" } })), 2);
+  assert.deepEqual(await checked("browser.locatorAllTextContents", () => bridge.call("browser.locatorAllTextContents", { tabId, locator: { css: ".locator-query-item" }, maxResults: 10 })), ["查询文本 Alpha", "查询文本 Beta"]);
+  assert.equal(await checked("browser.locatorInnerText", () => bridge.call("browser.locatorInnerText", { tabId, locator: { testId: "locator-query-first" } })), "查询文本 Alpha");
+  assert.equal(await checked("browser.locatorTextContent", () => bridge.call("browser.locatorTextContent", { tabId, locator: { testId: "locator-query-hidden" } })), "查询文本 Beta");
+  assert.equal(await checked("browser.locatorGetAttribute", () => bridge.call("browser.locatorGetAttribute", { tabId, locator: { testId: "locator-query-first" }, name: "data-query-kind" })), "first");
+  assert.equal(await checked("browser.locatorIsVisible", () => bridge.call("browser.locatorIsVisible", { tabId, locator: { testId: "locator-query-hidden" } })), false);
+  assert.equal(await checked("browser.locatorIsEnabled", () => bridge.call("browser.locatorIsEnabled", { tabId, locator: { testId: "locator-query-disabled" } })), false);
+
   await checked("browser.click", () => bridge.call("browser.click", { tabId, locator: { testId: "native-click" } }));
   await expectText(/native-click:ok/);
   await checked("browser.fill", () => bridge.call("browser.fill", { tabId, locator: { testId: "native-fill" }, value: "Lingee Fill" }));

@@ -45,7 +45,7 @@ The extension uses two control planes:
 1. Chrome extension APIs for tabs, tab groups, history, bookmarks, downloads, and Native Messaging.
 2. `chrome.debugger` for CDP domains such as Runtime, Page, DOM, Accessibility, and Input.
 
-The high-level locator API is implemented on top of DOM inspection plus CDP input dispatch. It intentionally exposes a smaller surface than upstream Playwright.
+The high-level locator API is implemented on top of DOM inspection plus CDP input dispatch. It intentionally exposes a smaller surface than upstream Playwright. Its typed read-only query layer mirrors the useful Codex collection/strict-query split: count and all-text operations accept collections, while inner text, text content, attribute, visibility and enabled-state operations enforce unique matches where applicable. These queries do not scroll, focus or dispatch input, and enforce bounded result sizes.
 
 Debugger attachment injects a top-frame `lingee-agent-cursor` overlay at the viewport center before the first controlled action. Its closed Shadow DOM contains a persistent pointer and click pulse and uses `pointer-events: none`. A mutation observer restores the host if page code removes it. Navigation reinjects the centered pointer; semantic clicks, coordinate clicks, mouse moves, wheel coordinates, and drag steps update its position without hiding it. Script injection is best effort on restricted Chrome pages, so visual rendering never changes whether the underlying input action is allowed or dispatched. Detaching control removes the overlay and observer.
 

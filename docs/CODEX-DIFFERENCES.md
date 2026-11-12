@@ -39,6 +39,7 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Tab grouping | Implemented | Title, color, and collapsed state supported |
 | Read page text | Implemented | Bounded result size |
 | DOM snapshot | Implemented with differences | Compact clean-room format, not Codex's private snapshot schema |
+| Typed locator queries | Implemented | Count, bounded all-text, strict inner/text content and attribute reads, visibility and enabled state; no arbitrary locator evaluation |
 | Accessibility snapshot | Implemented | Uses CDP Accessibility domain |
 | Playwright-style selectors | Partially equivalent | CSS, role/name, label, text, test ID; not the full Codex subset or upstream Playwright |
 | Click, fill, keypress, scroll | Implemented | CDP Input-backed |

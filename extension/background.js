@@ -3,6 +3,7 @@ import { createDebuggerController } from "./debugger-controller.js";
 import { FOREIGN_FRAME_MONITOR_KEY, installForeignFrameMonitor, removeForeignFrameMonitor, readForeignFrameMonitorDiagnostics } from "./foreign-frame-monitor.js";
 import { VIRTUAL_CURSOR_KEY, removeVirtualCursor, renderVirtualCursor } from "./virtual-cursor.js";
 import { createTabOperationQueue } from "./tab-operation-queue.js";
+import { runLocatorQuery, validateLocatorQuery, validateLocatorQueryOptions } from "./locator-query.js";
 
 const HOST_NAME = "org.universal_browser.bridge";
 const CDP_VERSION = "1.3";
@@ -185,7 +186,7 @@ async function execute(method, params) {
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3" },
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -265,6 +266,20 @@ async function execute(method, params) {
       return evaluateValue(await authorizedTab(params, settings), readTextExpression(params.maxChars));
     case "browser.domSnapshot":
       return evaluateValue(await authorizedTab(params, settings), domSnapshotExpression(params));
+    case "browser.locatorCount":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "count", params);
+    case "browser.locatorAllTextContents":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxResults", "maxCharsPerItem", "maxTotalChars"]), settings), params.locator, "allTextContents", params);
+    case "browser.locatorInnerText":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxChars"]), settings), params.locator, "innerText", params);
+    case "browser.locatorTextContent":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxChars"]), settings), params.locator, "textContent", params);
+    case "browser.locatorGetAttribute":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "name", "maxChars"]), settings), params.locator, "getAttribute", { ...params, name: requireString(params.name, "name") });
+    case "browser.locatorIsVisible":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "isVisible", params);
+    case "browser.locatorIsEnabled":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "isEnabled", params);
     case "browser.accessibilitySnapshot":
       return sendCdp(await authorizedTab(params, settings), "Accessibility.getFullAXTree", {});
     case "browser.screenshot": {
@@ -776,6 +791,17 @@ async function locate(tabId, locator) {
   return result;
 }
 
+async function queryLocator(tabId, locator, operation, options) {
+  validateLocatorQuery(locator);
+  validateLocatorQueryOptions(operation, options);
+  const result = await evaluateValue(tabId, `(${runLocatorQuery.toString()})(${JSON.stringify(locator)}, ${JSON.stringify(operation)}, ${JSON.stringify(options || {})})`);
+  if (!result?.ok) {
+    const failure = result?.error || { code: "BROWSER_ERROR", message: "Locator query failed" };
+    throw codedError(failure.code, failure.message, failure.data);
+  }
+  return result.value;
+}
+
 async function setFileInput(tabId, selector, files) {
   if (!Array.isArray(files) || files.length === 0) throw codedError("INVALID_PARAMS", "files must be a non-empty array");
   const document = await sendCdp(tabId, "DOM.getDocument", { depth: 0, pierce: true });
@@ -886,7 +912,7 @@ function keyDefinition(key) {
 }
 
 function capabilityList() {
-  return ["tabs", "tabGroups", "navigation", "domSnapshot", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
+  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
 }
 
 function requireTabId(params) {
@@ -911,6 +937,12 @@ function compact(value) {
 
 function codedError(code, message, data) {
   return Object.assign(new Error(message), { code, data });
+}
+
+function assertOnlyParams(params, allowed) {
+  const unknown = Object.keys(params || {}).find((key) => !allowed.includes(key));
+  if (unknown) throw codedError("INVALID_PARAMS", `Unknown parameter: ${unknown}`, { field: unknown });
+  return params;
 }
 
 connectNative();

@@ -169,6 +169,7 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /async function controlledDialogTab[\s\S]*assertTabNotBlocked[\s\S]*controlledTabs\.has[\s\S]*attachedTabs\.has/);
   assert.match(background, /port\.onMessage\.addListener\(\(message\) => \{ void onNativeMessage\(message, port\); \}\)/, "native messages remain concurrent while a page dialog blocks the initiating click");
   assert.match(background, /dialogHandling: "codex-lifecycle-v3"/);
+  assert.match(background, /locatorQueries: "codex-read-v1"/);
   assert.match(background, /Page\.javascriptDialogOpening[\s\S]*jsDialogsByTab\.set[\s\S]*dialogOpenWaitersByTab/);
   assert.match(background, /Page\.javascriptDialogClosed[\s\S]*jsDialogsByTab\.delete[\s\S]*dialogCloseWaitersByTab/);
   assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*Promise\.race[\s\S]*dialogOpened: true/);

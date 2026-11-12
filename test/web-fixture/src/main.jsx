@@ -119,6 +119,11 @@ function CapabilityLab() {
           <label><input data-testid="native-check" type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> 已确认</label>
           <label>原生选择<select data-testid="native-select" value={choice} onChange={(e) => setChoice(e.target.value)}><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label>
         </div>
+        <div className="locator-query-fixture" aria-label="Locator 查询夹具">
+          <span className="locator-query-item" data-testid="locator-query-first" data-query-kind="first">查询文本 Alpha</span>
+          <span className="locator-query-item" data-testid="locator-query-hidden" hidden>查询文本 Beta</span>
+          <button data-testid="locator-query-disabled" disabled>禁用按钮</button>
+        </div>
         <output data-testid="semantic-result">{status};fill={text};type={typed};key={key};checked={checked};select={choice}</output>
         <div className="ambiguous"><button>同名按钮</button><button>同名按钮</button></div>
       </Section>

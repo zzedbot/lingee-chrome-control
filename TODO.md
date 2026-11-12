@@ -1,7 +1,7 @@
 # Lingee Chrome Control 能力补齐 TODO
 
 更新日期：2026-11-11
-当前基线：0.1.23 / `overlay-v13`
+当前基线：0.1.24 / `overlay-v13` / `codex-read-v1`
 参照对象：本机 Codex Browser Use 公开运行接口与仓库 `docs/CODEX-DIFFERENCES.md`
 
 ## 执行规则
@@ -36,14 +36,14 @@
 - [x] 保证 `browser.cdp`、`policy.allowCdpMethod`、直接 CDP 名称和未知方法不进入 Skill 标准注册表。
 - 验收：新增方法只需在一个注册源声明；MCP/CLI 契约测试自动证明两端一致。
 
-### 02. 类型化 Locator 查询能力
+### 02. 类型化 Locator 查询能力（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.locatorCount`。
-- [ ] 新增 `browser.locatorAllTextContents`。
-- [ ] 新增 `browser.locatorInnerText` 与 `browser.locatorTextContent`。
-- [ ] 新增 `browser.locatorGetAttribute`。
-- [ ] 新增 `browser.locatorIsVisible` 与 `browser.locatorIsEnabled`。
-- [ ] 所有查询要求 locator 明确、结果有大小上限、只读且不触发页面行为。
+- [x] 新增 `browser.locatorCount`。
+- [x] 新增 `browser.locatorAllTextContents`。
+- [x] 新增 `browser.locatorInnerText` 与 `browser.locatorTextContent`。
+- [x] 新增 `browser.locatorGetAttribute`。
+- [x] 新增 `browser.locatorIsVisible` 与 `browser.locatorIsEnabled`。
+- [x] 所有查询要求 locator 明确、结果有大小上限、只读且不触发页面行为。
 - 验收：无需 raw evaluate 即可完成常见元素数量、文本、属性和状态判断。
 
 ### 03. Frame 与嵌套 Frame Locator
@@ -176,5 +176,6 @@
 ## 当前进度
 
 - [x] 0.1.23：标准 MCP/CLI 控制面、raw CDP 阻断、虚拟鼠标强绑定、同标签页操作队列。
+- [x] 0.1.24：第一批类型化 Locator 查询代码、契约、单元测试和真实 Chrome E2E 用例已就绪。
 - [x] 01. 统一标准能力注册表。
-- [ ] 下一项：02. 类型化 Locator 查询能力。
+- [ ] 第 02 项待重新加载扩展并通过真实 Chrome E2E 后最终完成；之后进入第 03 项。

@@ -47,6 +47,13 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 |---|---|---|
 | `browser.readText` | `tabId` | URL, title, visible body text |
 | `browser.domSnapshot` | `tabId` | Compact interactive-node snapshot |
+| `browser.locatorCount` | `tabId`, `locator` | Number of matching elements, including hidden elements |
+| `browser.locatorAllTextContents` | `tabId`, `locator` | Bounded text-content array for all matches |
+| `browser.locatorInnerText` | `tabId`, `locator` | Bounded rendered text from one unique match |
+| `browser.locatorTextContent` | `tabId`, `locator` | Bounded text content from one unique match |
+| `browser.locatorGetAttribute` | `tabId`, `locator`, `name` | Bounded attribute value from one unique match |
+| `browser.locatorIsVisible` | `tabId`, `locator` | Current visibility, or false when absent |
+| `browser.locatorIsEnabled` | `tabId`, `locator` | Current enabled state, or false when absent |
 | `browser.accessibilitySnapshot` | `tabId` | Chrome accessibility tree |
 | `browser.screenshot` | `tabId` | Base64 image and MIME type |
 
@@ -67,7 +74,7 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 | `browser.getDialog` | `tabId` |
 | `browser.handleDialog` | `tabId` and optional `dialogId`, `accept`, `promptText` |
 
-A locator supports `css`, `role` plus `name`, `label`, `text`, or `testId`. Locator operations reject zero matches and ambiguous matches.
+A locator supports `css`, `role` plus `name`, `label`, `text`, or `testId`. Input operations require one visible match. Strict read operations reject zero matches and ambiguous matches; `locatorCount` and `locatorAllTextContents` intentionally operate on collections, while the state predicates return false for zero matches. Query operations never scroll, focus, or dispatch input. Collection length and returned text are bounded.
 
 JavaScript dialogs follow the same lifecycle as Codex Browser Use: the extension subscribes before the triggering pointer release, records the dialog as a first-class object, and lets the click return with `dialogOpened` even if Chrome still has the input command pending. Call `browser.getDialog`, then pass its `id` to `browser.handleDialog`. Dialog handling goes directly to the already attached debugger target and waits for `Page.javascriptDialogClosed`; it does not run page scripts or cursor recovery while the modal dialog is open.
 
@@ -109,6 +116,8 @@ These methods fail with `SENSITIVE_METADATA_APPROVAL_REQUIRED` until explicitly 
 | `SENSITIVE_METADATA_APPROVAL_REQUIRED` | Sensitive metadata switch is off |
 | `LOCATOR_NOT_FOUND` | Locator matched no visible element |
 | `LOCATOR_AMBIGUOUS` | Locator matched more than one visible element |
+| `INVALID_LOCATOR` | Locator is empty, contains an unsupported field, or has invalid CSS |
+| `LOCATOR_RESULT_TOO_LARGE` | A locator query exceeded its configured collection or text limit |
 | `BROWSER_TIMEOUT` | Extension operation exceeded its timeout |
 | `FOREIGN_FRAME_MONITOR_FAILED` | The monitor could not cover all active page documents or neutralize foreign extension frames |
 | `DEBUGGER_INITIALIZATION_CANCELLED` | A detach or tab lifecycle event invalidated initialization; reread state before retrying |

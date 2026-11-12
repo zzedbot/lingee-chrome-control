@@ -130,6 +130,7 @@ test("skill package contains required cross-tool files", async () => {
 test("skill bundles an exact installable copy of the Chrome extension", async () => {
   const extensionFiles = [
     "background.js",
+    "locator-query.js",
     "debugger-controller.js",
     "foreign-frame-monitor.js",
     "manifest.json",

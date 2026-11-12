@@ -7,6 +7,7 @@ export const CAPABILITY_CASES = Object.freeze([
   { methods: ["browser.claimTab", "browser.detachTab"], layer: "control", mode: "runtime", case: "attach and release debugger-backed control with the visible cursor" },
   { methods: ["browser.navigate", "browser.back", "browser.forward", "browser.reload"], layer: "navigation", mode: "runtime", case: "navigate between deterministic routes and verify each resulting page" },
   { methods: ["browser.readText", "browser.domSnapshot", "browser.accessibilitySnapshot", "browser.screenshot"], layer: "observation", mode: "runtime", case: "observe bounded text, DOM, AX tree and PNG screenshot" },
+  { methods: ["browser.locatorCount", "browser.locatorAllTextContents", "browser.locatorInnerText", "browser.locatorTextContent", "browser.locatorGetAttribute", "browser.locatorIsVisible", "browser.locatorIsEnabled"], layer: "locator-query", mode: "runtime", case: "query bounded collection text and strict element text, attributes, visibility and enabled state" },
   { methods: ["browser.click", "browser.fill", "browser.press", "browser.type"], layer: "semantic-input", mode: "runtime", case: "exercise unique native and KDesign semantic controls with state readback" },
   { methods: ["browser.mouseMove", "browser.coordinateClick", "browser.drag"], layer: "pointer", mode: "runtime", case: "move, coordinate-click and drag while preserving cursor binding" },
   { methods: ["browser.wheel", "browser.scroll"], layer: "scroll", mode: "runtime", case: "dispatch visible wheel feedback and page scrolling" },

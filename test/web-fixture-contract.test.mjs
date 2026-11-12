@@ -20,7 +20,7 @@ test("web fixture accounts for every standard MCP and CLI capability", () => {
 test("web fixture exposes stable targets for every visible interaction class", async () => {
   const source = await readFile(path.join(repoRoot, "test", "web-fixture", "src", "main.jsx"), "utf8");
   for (const testId of [
-    "native-click", "native-fill", "native-type", "native-key", "coordinate-target", "drag-handle",
+    "native-click", "native-fill", "native-type", "native-key", "locator-query-first", "locator-query-hidden", "locator-query-disabled", "coordinate-target", "drag-handle",
     "wheel-zone", "scroll-destination", "file-input", "confirm-dialog", "prompt-dialog", "download-link",
     "navigation-link", "new-tab-link", "reload-counter", "frame-shell", "open-modal", "open-drawer", "pro-form-submit", "pro-login-submit"
   ]) assert.match(source, new RegExp(`data-testid=[\\"'{]+${testId}`), testId);
