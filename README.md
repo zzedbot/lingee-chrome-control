@@ -126,6 +126,12 @@ PowerShell quoting varies by host. Third-party applications should normally call
 
 第三方平台应在整个任务中保持一个稳定、非敏感的 `UNIVERSAL_BROWSER_SESSION_ID`。存在多个 Chrome Bridge 实例时，必须先发现实例并明确设置 `UNIVERSAL_BROWSER_INSTANCE_ID`，不能根据页签标题猜测用户配置。
 
+## Packaged CRX
+
+已签名的 CRX3 安装包位于 [`releases/lingee-chrome-agent-bridge-0.1.26.crx`](releases/lingee-chrome-agent-bridge-0.1.26.crx)，对应扩展 ID 为 `haibmamedieblhbonifchcedcbbfgini`。校验值及 Native Host 配套说明见 [`releases/README.md`](releases/README.md)。
+
+CRX 只包含 Chrome 扩展，仍需单独安装 Native Host，并将上述扩展 ID 传给 `install-host.mjs`。Windows/macOS 的普通用户分发建议使用 Chrome Web Store 或企业管理策略；本地开发仍推荐加载 unpacked extension。
+
 ## Regression tests
 
 重新加载 unpacked extension 后，可运行真实 Chrome 端到端回归：
