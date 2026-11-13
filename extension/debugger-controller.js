@@ -162,9 +162,9 @@ export function createDebuggerController({
       const monitorRefresh = monitorRefreshByTab.get(tabId);
       if (monitorRefresh) await monitorRefresh.catch(() => {});
       try {
-        if (hadAttachment) await debuggerApi.detach({ tabId });
+        if (hadAttachment) await withTimeout(debuggerApi.detach({ tabId }), 3000, "DEBUGGER_DETACH_TIMEOUT", `Debugger detach timed out for tab ${tabId}`);
       } finally {
-        try { await removeMonitor(tabId); } catch {}
+        try { await withTimeout(removeMonitor(tabId), 3000, "MONITOR_CLEANUP_TIMEOUT", `Monitor cleanup timed out for tab ${tabId}`); } catch {}
       }
     })();
     detachmentByTab.set(tabId, pending);
@@ -183,7 +183,7 @@ export function createDebuggerController({
       await previous?.catch(() => {});
       await initializing?.catch(() => {});
       await refresh?.catch(() => {});
-      try { await removeMonitor(tabId); } catch {}
+      try { await withTimeout(removeMonitor(tabId), 3000, "MONITOR_CLEANUP_TIMEOUT", `Monitor cleanup timed out for tab ${tabId}`); } catch {}
     })();
     detachmentByTab.set(tabId, pending);
     pending.finally(() => {
@@ -197,6 +197,13 @@ export function createDebuggerController({
   }
 
   return { attachedTabs, controlledTabs, detach, ensure, forgetTab, handleDetached, refresh };
+}
+
+function withTimeout(promise, timeoutMs, code, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error(message), { code })), timeoutMs))
+  ]);
 }
 
 function isAlreadyAttachedError(error) {

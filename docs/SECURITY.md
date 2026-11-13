@@ -10,6 +10,10 @@ The design assumes:
 - Agent clients may be buggy or over-broad.
 - Other processes running as the same OS user may attempt to connect locally.
 - Browser history, bookmarks, downloads, screenshots, and page text may be sensitive.
+- Session IDs are non-secret routing identifiers, never authentication tokens. Tab ownership errors and lease reads do not disclose another session ID.
+- Upload and file-chooser methods accept only existing absolute regular-file paths, cap file counts, and never read file contents.
+- Download-media targets are resolved from an explicit locator and checked by site policy; downloaded files are returned as data artifacts and are never executed.
+- Console logs discard remote object handles, bound entry/text sizes, and strip query/hash from approved source URLs.
 - `chrome.debugger` is powerful enough to alter page and browser state.
 
 It does not claim to defend against a fully compromised OS account, a malicious Chrome installation, or an administrator with machine-level access.

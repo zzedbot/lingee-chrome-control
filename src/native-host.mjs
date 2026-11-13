@@ -9,6 +9,7 @@ import { NativeMessageDecoder, encodeNativeMessage } from "./native-framing.mjs"
 import { assertCdpAllowed, assertUrlAllowed, isHostAllowed, loadPolicy, normalizeHost, savePolicy } from "./policy.mjs";
 import { HOST_NAME, runtimeDirectory } from "./runtime-paths.mjs";
 import { VERSION } from "./version.mjs";
+import { createSessionManager } from "./session-manager.mjs";
 
 const instanceId = crypto.randomUUID();
 const token = crypto.randomBytes(32).toString("base64url");
@@ -20,6 +21,18 @@ let extensionInfo = null;
 let shuttingDown = false;
 let descriptorPath;
 let ipcEndpoint;
+const sessionManager = createSessionManager();
+const sessionCleanupTimer = setInterval(() => {
+  for (const sessionId of sessionManager.expiredSessions()) void endBrowserSession(sessionId).catch(logError);
+}, 30000);
+sessionCleanupTimer.unref?.();
+const MUTATING_TAB_METHODS = new Set([
+  "browser.closeTab", "browser.activateTab", "browser.detachTab", "browser.navigate", "browser.back", "browser.forward", "browser.reload",
+  "browser.click", "browser.fill", "browser.press", "browser.type", "browser.mouseMove", "browser.coordinateClick", "browser.drag", "browser.wheel", "browser.scroll", "browser.setFileInput", "browser.handleDialog", "browser.expectNavigation",
+  "browser.check", "browser.uncheck", "browser.setChecked", "browser.selectOption", "browser.doubleClick", "browser.pressSequentially",
+  "browser.waitForDownload", "browser.downloadMedia", "browser.waitForFileChooser", "browser.setFileChooserFiles"
+]);
+const TAB_CREATING_METHODS = new Set(["browser.click", "browser.coordinateClick", "browser.doubleClick", "browser.press", "browser.expectNavigation", "browser.waitForDownload", "browser.downloadMedia"]);
 
 const server = net.createServer((socket) => {
   sockets.add(socket);
@@ -113,11 +126,12 @@ async function handleRpc(request) {
     throw rpcCoded(-32600, "Invalid JSON-RPC request");
   }
   if (!safeTokenEqual(request.auth, token)) throw rpcCoded(-32001, "Authentication failed", { code: "AUTH_FAILED" });
-  const result = await dispatch(request.method, request.params || {});
+  const result = await dispatch(request.method, request.params || {}, request.sessionId);
   return { jsonrpc: "2.0", id: request.id, result };
 }
 
-async function dispatch(method, params) {
+async function dispatch(method, params, sessionId) {
+  if (method.startsWith("_bridge.")) throw coded("METHOD_NOT_FOUND", `Unknown browser method: ${method}`);
   if (method === "bridge.getInfo") {
     return {
       name: "Lingee Chrome Agent Bridge",
@@ -128,8 +142,26 @@ async function dispatch(method, params) {
       transport: { type: "local-pipe-jsonrpc", endpoint: ipcEndpoint, authenticated: true }
     };
   }
+  if (method.startsWith("browser.") && method !== "browser.endSession") sessionManager.touch(sessionId);
+  if (method === "browser.endSession") { assertOnlyHostParams(params, []); return endBrowserSession(sessionId); }
+  if (method === "browser.getLease") {
+    assertOnlyHostParams(params, ["tabId"]);
+    const tabId = hostTabId(params.tabId);
+    const lease = sessionManager.get(tabId);
+    return lease ? { tabId: lease.tabId, temporary: lease.temporary, marker: lease.marker, createdAt: lease.createdAt, expiresAt: lease.expiresAt, ownedByCurrentSession: lease.sessionId === sessionId } : null;
+  }
+  if (method === "browser.transferTab") { assertOnlyHostParams(params, ["tabId", "targetSessionId"]); return sessionManager.transfer(hostTabId(params.tabId), sessionId, params.targetSessionId); }
+  if (method === "browser.markHandoff") { assertOnlyHostParams(params, ["tabId"]); return sessionManager.mark(hostTabId(params.tabId), sessionId, "handoff"); }
+  if (method === "browser.markDeliverable") { assertOnlyHostParams(params, ["tabId"]); return sessionManager.mark(hostTabId(params.tabId), sessionId, "deliverable"); }
   if (method.startsWith("policy.")) return handlePolicy(method, params);
   if (!extensionInfo) throw coded("EXTENSION_NOT_READY", "Chrome extension has not completed the native messaging handshake");
+
+  if (method === "browser.openTab") sessionManager.touch(sessionId);
+  if (method === "browser.groupTabs") {
+    if (!Array.isArray(params.tabIds) || !params.tabIds.length) throw coded("INVALID_PARAMS", "tabIds must be a non-empty array");
+    for (const tabId of params.tabIds) sessionManager.assertOwner(hostTabId(tabId), sessionId);
+  }
+  if (MUTATING_TAB_METHODS.has(method)) sessionManager.assertOwner(params.tabId, sessionId);
 
   let policy = await loadPolicy();
   if (method === "browser.cdp") assertCdpAllowed(policy, params.command);
@@ -137,6 +169,10 @@ async function dispatch(method, params) {
     throw coded("SENSITIVE_METADATA_APPROVAL_REQUIRED", "History, bookmarks, and downloads access is disabled by policy");
   }
   if (["browser.navigate", "browser.openTab"].includes(method)) assertUrlAllowed(policy, params.url || "about:blank");
+  if (method === "browser.expectNavigation" && params.action?.method === "browser.navigate") {
+    assertUrlAllowed(policy, params.action?.params?.url || "about:blank");
+  }
+  if (["browser.setFileInput", "browser.setFileChooserFiles"].includes(method)) await validateUploadFiles(params.files);
 
   if (method === "browser.listTabs") {
     const tabs = await sendToExtension(method, params);
@@ -150,7 +186,111 @@ async function dispatch(method, params) {
     const tab = await sendToExtension("browser.getTab", { tabId: params.tabId });
     assertTabUrlAllowed(policy, tab.url);
   }
-  return sendToExtension(method, params);
+  for (const framePath of collectFramePaths(params)) {
+    let resolved;
+    try {
+      resolved = await sendToExtension("_bridge.resolveFramePath", { tabId: params.tabId, framePath });
+    } catch (error) {
+      const absentFrameCompletesWait = method === "browser.waitFor"
+        && ["detached", "hidden"].includes(String(params.state || ""))
+        && ["FRAME_NOT_FOUND", "FRAME_CONTEXT_CHANGED"].includes(error.code);
+      if (absentFrameCompletesWait) continue;
+      throw error;
+    }
+    for (const frame of resolved?.frames || []) assertTabUrlAllowed(policy, frame.url);
+  }
+  if (method === "browser.downloadMedia") {
+    const target = await sendToExtension("_bridge.resolveDownloadTarget", { tabId: params.tabId, locator: params.locator, framePath: params.framePath });
+    assertDownloadUrlAllowed(policy, target?.url);
+  }
+  const actionStartedAt = Date.now();
+  let result;
+  let actionError;
+  try {
+    result = await sendToExtension(method, params);
+  } catch (error) {
+    actionError = error;
+  }
+  if (method === "browser.claimTab") sessionManager.acquire(params.tabId, sessionId, { temporary: false });
+  if (method === "browser.openTab" && result?.id != null) sessionManager.acquire(result.id, sessionId, { temporary: true });
+  if (TAB_CREATING_METHODS.has(method)) {
+    const created = await sendToExtension("_bridge.consumeCreatedTabs", { tabId: params.tabId, since: actionStartedAt, settleMs: 250 }).catch(() => ({ tabIds: [] }));
+    for (const tabId of created?.tabIds || []) sessionManager.acquire(tabId, sessionId, { temporary: true });
+  }
+  if (actionError) throw actionError;
+  if (method === "browser.closeTab" && params.tabId != null) sessionManager.forgetTab(params.tabId);
+  if (method === "browser.waitForURL") assertTabUrlAllowed(policy, result?.url);
+  if (method === "browser.waitForLoadState") assertTabUrlAllowed(policy, result?.url);
+  if (method === "browser.expectNavigation") assertTabUrlAllowed(policy, result?.navigation?.toUrl || result?.navigation?.url);
+  if (method === "browser.waitForDownload" || method === "browser.downloadMedia") assertDownloadUrlAllowed(policy, result?.download?.url);
+  if (method === "browser.getConsoleLogs" && Array.isArray(result?.logs)) {
+    result.logs = result.logs.map((entry) => ({ ...entry, url: sanitizeSourceUrl(policy, entry.url) }));
+  }
+  return result;
+}
+
+async function validateUploadFiles(files) {
+  if (!Array.isArray(files) || files.length < 1 || files.length > 20) throw coded("INVALID_PARAMS", "files must contain 1 to 20 absolute file paths");
+  for (const file of files) {
+    if (typeof file !== "string" || !path.isAbsolute(file)) throw coded("UPLOAD_FILE_INVALID", "Every upload path must be absolute");
+    const stats = await fsp.stat(file).catch(() => null);
+    if (!stats?.isFile()) throw coded("UPLOAD_FILE_NOT_FOUND", `Upload file does not exist or is not a regular file: ${path.basename(file)}`);
+  }
+}
+
+function sanitizeSourceUrl(policy, value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || !isHostAllowed(policy, url.hostname)) return null;
+    return `${url.origin}${url.pathname}`.slice(0, 2048);
+  } catch { return null; }
+}
+
+function assertDownloadUrlAllowed(policy, value) {
+  if (!value) return;
+  const protocol = new URL(value).protocol;
+  if (["data:", "blob:"].includes(protocol)) return;
+  assertTabUrlAllowed(policy, value);
+}
+
+async function endBrowserSession(sessionId) {
+  const leases = sessionManager.releaseSession(sessionId);
+  const closed = [];
+  const preserved = [];
+  for (const lease of leases) {
+    if (!lease.temporary || lease.marker) { preserved.push({ ...lease, reason: lease.marker || "user-tab" }); continue; }
+    try {
+      const inspection = await sendToExtension("_bridge.inspectUnsavedWork", { tabId: lease.tabId });
+      if (inspection?.unsaved) { preserved.push({ ...lease, reason: "unsaved-work" }); continue; }
+      await sendToExtension("browser.closeTab", { tabId: lease.tabId });
+      closed.push(lease.tabId);
+    } catch (error) {
+      preserved.push({ ...lease, reason: error.code === "TAB_NOT_FOUND" ? "already-closed" : "cleanup-failed" });
+    }
+  }
+  return { closed, preserved };
+}
+
+function collectFramePaths(params) {
+  const paths = [];
+  if (Array.isArray(params?.framePath) && params.framePath.length) paths.push(params.framePath);
+  for (const endpoint of [params?.from, params?.to]) {
+    if (Array.isArray(endpoint?.framePath) && endpoint.framePath.length) paths.push(endpoint.framePath);
+  }
+  if (Array.isArray(params?.action?.params?.framePath) && params.action.params.framePath.length) paths.push(params.action.params.framePath);
+  return paths;
+}
+
+function assertOnlyHostParams(params, allowed) {
+  const unknown = Object.keys(params || {}).filter((key) => !allowed.includes(key));
+  if (unknown.length) throw coded("INVALID_PARAMS", `Unknown parameter: ${unknown[0]}`, { field: unknown[0] });
+  return params;
+}
+
+function hostTabId(value) {
+  if (!Number.isInteger(value) || value < 0) throw coded("INVALID_PARAMS", "tabId must be a non-negative integer");
+  return value;
 }
 
 async function handlePolicy(method, params) {
@@ -269,6 +409,7 @@ function logError(error) {
 async function shutdown(exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearInterval(sessionCleanupTimer);
   for (const waiter of pending.values()) {
     clearTimeout(waiter.timeout);
     waiter.reject(coded("HOST_SHUTDOWN", "Native host is shutting down"));

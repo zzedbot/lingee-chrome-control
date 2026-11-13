@@ -54,6 +54,16 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 | `browser.locatorGetAttribute` | `tabId`, `locator`, `name` | Bounded attribute value from one unique match |
 | `browser.locatorIsVisible` | `tabId`, `locator` | Current visibility, or false when absent |
 | `browser.locatorIsEnabled` | `tabId`, `locator` | Current enabled state, or false when absent |
+| `browser.waitFor` | `tabId`, `locator`, `state` | Bounded wait for attached, detached, visible, hidden, enabled, or disabled |
+| `browser.waitForURL` | `tabId`, `url` | Exact, contains, or glob URL wait with optional load-state gate |
+| `browser.waitForLoadState` | `tabId`, `state` | Wait for commit, DOM content, load, or bounded network idle |
+| `browser.expectNavigation` | `tabId`, `action` | Run a reviewed high-level action after registering its navigation expectation |
+| `browser.check` / `browser.uncheck` / `browser.setChecked` | `tabId`, `locator` | Set and verify native checkbox/radio state with visible input |
+| `browser.selectOption` | `tabId`, `locator`, `options` | Select native options by value, label, or index and verify values |
+| `browser.doubleClick` / `browser.pressSequentially` | `tabId`, `locator` | Strongly bound double click or bounded character-by-character input |
+| `browser.waitForDownload` / `browser.downloadMedia` | `tabId`, action or locator | Action-bound completed download with reviewed source URL |
+| `browser.waitForFileChooser` / `browser.setFileChooserFiles` | `tabId`, action or chooser ID | Capture a chooser before its action and set validated files |
+| `browser.getConsoleLogs` | `tabId` | Filtered bounded structured console entries with sequence cursor |
 | `browser.accessibilitySnapshot` | `tabId` | Chrome accessibility tree |
 | `browser.screenshot` | `tabId` | Base64 image and MIME type |
 
@@ -74,9 +84,11 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 | `browser.getDialog` | `tabId` |
 | `browser.handleDialog` | `tabId` and optional `dialogId`, `accept`, `promptText` |
 
-A locator supports `css`, `role` plus `name`, `label`, `text`, or `testId`. Input operations require one visible match. Strict read operations reject zero matches and ambiguous matches; `locatorCount` and `locatorAllTextContents` intentionally operate on collections, while the state predicates return false for zero matches. Query operations never scroll, focus, or dispatch input. Collection length and returned text are bounded.
+A locator supports `css`, `role` plus `name`, `label`, `text`, or `testId`. Locator queries and click/fill/press/type/drag/file input accept an optional ordered `framePath`, whose entries use the same locator shape to enter nested frames. Each frame document and loader is revalidated before input; removed or navigated frames invalidate old context. Cross-origin frame URLs are independently checked by the Native Host site policy. Input operations require one visible match. Strict read operations reject zero matches and ambiguous matches; `locatorCount` and `locatorAllTextContents` intentionally operate on collections, while the state predicates return false for zero matches. Query operations never scroll, focus, or dispatch input. Collection length and returned text are bounded.
 
 JavaScript dialogs follow the same lifecycle as Codex Browser Use: the extension subscribes before the triggering pointer release, records the dialog as a first-class object, and lets the click return with `dialogOpened` even if Chrome still has the input command pending. Call `browser.getDialog`, then pass its `id` to `browser.handleDialog`. Dialog handling goes directly to the already attached debugger target and waits for `Page.javascriptDialogClosed`; it does not run page scripts or cursor recovery while the modal dialog is open.
+
+Each Bridge client sends a non-secret session ID outside browser method parameters. `browser.claimTab` establishes an exclusive renewable lease; read-only methods remain shareable, while navigation, input, close and detach require ownership. `browser.getLease` never reveals another session ID. `browser.transferTab`, `browser.markHandoff`, `browser.markDeliverable`, and `browser.endSession` implement explicit transfer and cleanup. Tabs opened by the session or by its controlled actions are temporary; marked, user-owned, unsaved, and failed-cleanup tabs are preserved.
 
 Claiming a tab renders the persistent Precision Glass overlay in its top frame before the first controlled action: a centered `Lingee 正在控制` chip, a short viewport-edge sweep, and a dual-outline pointer centered in the viewport. Clicks add two rings and a center flash, wheel and scroll calls show a directional capsule beside the pointer, and drag shows an origin dot and tether. Navigation rebuilds and recenters the overlay. It has no hit testing, restores itself if its host is removed, and remains visible until `browser.detachTab`. Restricted browser pages may accept CDP input while rejecting overlay injection; in that case the action still runs without the visual pointer.
 
@@ -118,6 +130,15 @@ These methods fail with `SENSITIVE_METADATA_APPROVAL_REQUIRED` until explicitly 
 | `LOCATOR_AMBIGUOUS` | Locator matched more than one visible element |
 | `INVALID_LOCATOR` | Locator is empty, contains an unsupported field, or has invalid CSS |
 | `LOCATOR_RESULT_TOO_LARGE` | A locator query exceeded its configured collection or text limit |
+| `INVALID_FRAME_PATH` | A frame path is malformed or exceeds the nesting limit |
+| `FRAME_NOT_FOUND` / `FRAME_AMBIGUOUS` | A frame locator matched zero or multiple visible frame elements |
+| `FRAME_INACCESSIBLE` / `FRAME_CONTEXT_CHANGED` | Chrome could not access the frame or its document changed before completion |
+| `LOCATOR_WAIT_TIMEOUT` / `URL_WAIT_TIMEOUT` / `LOAD_STATE_TIMEOUT` / `NAVIGATION_TIMEOUT` | A bounded wait did not reach its requested state |
+| `TAB_NOT_CLAIMED` / `TAB_OWNED_BY_ANOTHER_SESSION` | The current session lacks the required exclusive tab lease |
+| `CONTROL_TYPE_MISMATCH` / `CONTROL_NOT_INTERACTABLE` / `CONTROL_STATE_MISMATCH` | A high-level form operation failed its type, state, or final-value check |
+| `DOWNLOAD_TIMEOUT` / `DOWNLOAD_FAILED` | The newly registered download did not complete successfully |
+| `FILE_CHOOSER_TIMEOUT` / `FILE_CHOOSER_NOT_FOUND` | A chooser was not captured or is stale |
+| `UPLOAD_FILE_INVALID` / `UPLOAD_FILE_NOT_FOUND` | An upload path is not absolute, missing, or not a regular file |
 | `BROWSER_TIMEOUT` | Extension operation exceeded its timeout |
 | `FOREIGN_FRAME_MONITOR_FAILED` | The monitor could not cover all active page documents or neutralize foreign extension frames |
 | `DEBUGGER_INITIALIZATION_CANCELLED` | A detach or tab lifecycle event invalidated initialization; reread state before retrying |

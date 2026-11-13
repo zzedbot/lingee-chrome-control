@@ -1,7 +1,7 @@
 # Lingee Chrome Control 能力补齐 TODO
 
 更新日期：2026-11-11
-当前基线：0.1.24 / `overlay-v13` / `codex-read-v1`
+当前基线：0.1.26 / `overlay-v13` / `codex-read-v1` / `isolated-world-v1` / `navigation-v1` / `codex-lifecycle-v1`
 参照对象：本机 Codex Browser Use 公开运行接口与仓库 `docs/CODEX-DIFFERENCES.md`
 
 ## 执行规则
@@ -46,82 +46,82 @@
 - [x] 所有查询要求 locator 明确、结果有大小上限、只读且不触发页面行为。
 - 验收：无需 raw evaluate 即可完成常见元素数量、文本、属性和状态判断。
 
-### 03. Frame 与嵌套 Frame Locator
+### 03. Frame 与嵌套 Frame Locator（实现完成，待真实 Chrome 验收）
 
-- [ ] 定义可序列化的 frame 路径结构，支持 CSS、角色/名称、标签、文本和 test ID 定位 frame。
-- [ ] 让第 02 项查询和现有 click/fill/press/type/drag/fileInput 接受可选 frame 路径。
-- [ ] 支持同源和 Chrome 可合法注入/调试的跨源 iframe；对不可访问 frame 返回稳定错误。
-- [ ] 导航或 frame documentId 变化时使旧 locator 上下文失效，禁止复用旧坐标。
-- [ ] 覆盖嵌套 iframe、frame 删除、frame 导航和歧义 frame 的真实 Chrome E2E。
+- [x] 定义可序列化的 frame 路径结构，支持 CSS、角色/名称、标签、文本和 test ID 定位 frame。
+- [x] 让第 02 项查询和现有 click/fill/press/type/drag/fileInput 接受可选 frame 路径。
+- [x] 支持同源和 Chrome 可合法注入/调试的跨源 iframe；对不可访问 frame 返回稳定错误。
+- [x] 导航或 frame documentId 变化时使旧 locator 上下文失效，禁止复用旧坐标。
+- [x] 覆盖嵌套 iframe、frame 删除、frame 导航和歧义 frame 的真实 Chrome E2E。
 - 验收：企业 ERP 常见 iframe 页面可使用语义 locator 操作，不依赖坐标降级。
 
-### 04. 元素状态等待
+### 04. 元素状态等待（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.waitFor`，支持 `attached`、`detached`、`visible`、`hidden`、`enabled`、`disabled`。
-- [ ] 使用有界超时、合理轮询和导航感知，不使用无限等待或调用方页面脚本。
-- [ ] 返回最终状态、耗时和稳定错误码；超时不触发输入动作。
-- [ ] 支持顶层和 frame locator。
+- [x] 新增 `browser.waitFor`，支持 `attached`、`detached`、`visible`、`hidden`、`enabled`、`disabled`。
+- [x] 使用有界超时、合理轮询和导航感知，不使用无限等待或调用方页面脚本。
+- [x] 返回最终状态、耗时和稳定错误码；超时不触发输入动作。
+- [x] 支持顶层和 frame locator。
 - 验收：异步渲染控件可稳定等待，不再依赖固定 sleep。
 
-### 05. URL、加载状态和导航同步
+### 05. URL、加载状态和导航同步（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.waitForURL`。
-- [ ] 新增 `browser.waitForLoadState`，支持 `commit`、`domcontentloaded`、`load`、有界 `networkidle`。
-- [ ] 新增 `browser.expectNavigation`，把一个标准高层动作与预期导航绑定。
-- [ ] 与标签页操作队列、documentId 校验和导航恢复逻辑集成。
-- [ ] 覆盖 SPA history API、同文档导航、完整导航、重定向和超时。
+- [x] 新增 `browser.waitForURL`。
+- [x] 新增 `browser.waitForLoadState`，支持 `commit`、`domcontentloaded`、`load`、有界 `networkidle`。
+- [x] 新增 `browser.expectNavigation`，把一个标准高层动作与预期导航绑定。
+- [x] 与标签页操作队列、documentId 校验和导航恢复逻辑集成。
+- [x] 覆盖 SPA history API、同文档导航、完整导航、重定向和超时。
 - 验收：点击后跳转不需要盲目轮询，且不会在旧文档上继续输入。
 
-### 06. 表单和常用控件高层操作
+### 06. 表单和常用控件高层操作（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.check`、`browser.uncheck`、`browser.setChecked`。
-- [ ] 新增 `browser.selectOption`，支持 value、label、index 和多选。
-- [ ] 新增 `browser.doubleClick`，复用可见鼠标强绑定反馈。
-- [ ] 新增 `browser.pressSequentially`，支持受控逐字输入和超时。
-- [ ] 所有方法验证元素类型、可见性、启用状态和最终值。
+- [x] 新增 `browser.check`、`browser.uncheck`、`browser.setChecked`。
+- [x] 新增 `browser.selectOption`，支持 value、label、index 和多选。
+- [x] 新增 `browser.doubleClick`，复用可见鼠标强绑定反馈。
+- [x] 新增 `browser.pressSequentially`，支持受控逐字输入和超时。
+- [x] 所有方法验证元素类型、可见性、启用状态和最终值。
 - 验收：复选框、开关、原生下拉框和双击交互不再依赖脚本或坐标技巧。
 
-### 07. 会话与标签页所有权
+### 07. 会话与标签页所有权（实现完成，待真实 Chrome 验收）
 
-- [ ] 为 MCP/CLI 调用引入明确 `sessionId`，不暴露认证 token。
-- [ ] 建立标签页独占租约，默认禁止其他会话操作已认领页签。
-- [ ] 定义只读共享、显式移交、租约续期、断连释放和超时回收。
-- [ ] 阻止其他会话关闭、detach 或导航独占页签。
-- [ ] 保持不同标签页跨会话并发，同一标签页仍按队列串行。
+- [x] 为 MCP/CLI 调用引入明确 `sessionId`，不暴露认证 token。
+- [x] 建立标签页独占租约，默认禁止其他会话操作已认领页签。
+- [x] 定义只读共享、显式移交、租约续期、断连释放和超时回收。
+- [x] 阻止其他会话关闭、detach 或导航独占页签。
+- [x] 保持不同标签页跨会话并发，同一标签页仍按队列串行。
 - 验收：两个会话操作不同页签互不影响；同页签冲突返回稳定所有权错误。
 
-### 08. 临时标签页、Handoff 与 Deliverable
+### 08. 临时标签页、Handoff 与 Deliverable（实现完成，待真实 Chrome 验收）
 
-- [ ] 区分用户已有页签和会话创建页签。
-- [ ] 会话结束时自动关闭未标记的临时页签，只释放用户已有页签。
-- [ ] 新增 `browser.markHandoff` 和 `browser.markDeliverable`。
-- [ ] 定义跨轮次恢复、标记覆盖规则和异常退出清理。
-- [ ] 在关闭前保护未提交表单和潜在未保存工作。
+- [x] 区分用户已有页签和会话创建页签。
+- [x] 会话结束时自动关闭未标记的临时页签，只释放用户已有页签。
+- [x] 新增 `browser.markHandoff` 和 `browser.markDeliverable`。
+- [x] 定义跨轮次恢复、标记覆盖规则和异常退出清理。
+- [x] 在关闭前保护未提交表单和潜在未保存工作。
 - 验收：长期任务可安全交接，普通中间页不会持续堆积。
 
-### 09. 下载生命周期
+### 09. 下载生命周期（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.waitForDownload`，在点击动作前注册等待。
-- [ ] 返回下载 ID、建议文件名、状态和经过安全处理的本地路径。
-- [ ] 支持完成、失败、取消和超时；不把历史下载误认为当前动作结果。
-- [ ] 新增受限的 `browser.downloadMedia` 高层能力，禁止任意 URL 下载绕过站点策略。
-- [ ] 明确下载本身和后续运行文件的不同授权边界。
+- [x] 新增 `browser.waitForDownload`，在点击动作前注册等待。
+- [x] 返回下载 ID、建议文件名、状态和经过安全处理的本地路径。
+- [x] 支持完成、失败、取消和超时；不把历史下载误认为当前动作结果。
+- [x] 新增受限的 `browser.downloadMedia` 高层能力，禁止任意 URL 下载绕过站点策略。
+- [x] 明确下载本身和后续运行文件的不同授权边界。
 - 验收：能够可靠表达“点击并等待这一次下载完成”。
 
-### 10. File Chooser 生命周期
+### 10. File Chooser 生命周期（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.waitForFileChooser`，与触发 chooser 的高层动作绑定。
-- [ ] 返回是否允许多文件，并通过高层方法设置绝对文件路径。
-- [ ] 保留现有 CSS file-input 路径作为兼容方案。
-- [ ] 校验文件存在、数量、目标站点和用户授权，不读取文件内容。
+- [x] 新增 `browser.waitForFileChooser`，与触发 chooser 的高层动作绑定。
+- [x] 返回是否允许多文件，并通过高层方法设置绝对文件路径。
+- [x] 保留现有 CSS file-input 路径作为兼容方案。
+- [x] 校验文件存在、数量、目标站点和用户授权，不读取文件内容。
 - 验收：隐藏 file input 和动态 file chooser 均可稳定上传。
 
-### 11. 结构化控制台日志
+### 11. 结构化控制台日志（实现完成，待真实 Chrome 验收）
 
-- [ ] 新增 `browser.getConsoleLogs`。
-- [ ] 支持 level、文本过滤、数量限制和 sequence cursor。
-- [ ] 返回时间、级别、消息和经过脱敏的来源 URL。
-- [ ] 与现有 debugger 事件缓冲区共享边界，不返回对象句柄或任意页面数据。
+- [x] 新增 `browser.getConsoleLogs`。
+- [x] 支持 level、文本过滤、数量限制和 sequence cursor。
+- [x] 返回时间、级别、消息和经过脱敏的来源 URL。
+- [x] 与现有 debugger 事件缓冲区共享边界，不返回对象句柄或任意页面数据。
 - 验收：可以低噪声诊断页面错误，无需 raw CDP 或扫描全部事件。
 
 ### 12. 浏览器会话剪贴板
@@ -177,5 +177,7 @@
 
 - [x] 0.1.23：标准 MCP/CLI 控制面、raw CDP 阻断、虚拟鼠标强绑定、同标签页操作队列。
 - [x] 0.1.24：第一批类型化 Locator 查询代码、契约、单元测试和真实 Chrome E2E 用例已就绪。
+- [x] 0.1.25：Frame、元素状态等待、URL/加载状态/导航同步代码、契约和真实 Chrome E2E 用例已就绪。
+- [x] 0.1.26：表单控件、会话租约、临时页生命周期、下载、File Chooser 和结构化控制台日志代码与测试已就绪。
 - [x] 01. 统一标准能力注册表。
-- [ ] 第 02 项待重新加载扩展并通过真实 Chrome E2E 后最终完成；之后进入第 03 项。
+- [ ] 第 02～11 项待最后统一重新加载扩展并通过真实 Chrome E2E 后最终完成；之后进入第 12 项。

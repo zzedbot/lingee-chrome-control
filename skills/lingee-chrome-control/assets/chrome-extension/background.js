@@ -4,6 +4,8 @@ import { FOREIGN_FRAME_MONITOR_KEY, installForeignFrameMonitor, removeForeignFra
 import { VIRTUAL_CURSOR_KEY, removeVirtualCursor, renderVirtualCursor } from "./virtual-cursor.js";
 import { createTabOperationQueue } from "./tab-operation-queue.js";
 import { runLocatorQuery, validateLocatorQuery, validateLocatorQueryOptions } from "./locator-query.js";
+import { FRAME_WORLD_NAME, resolveFrameElement, validateFramePath } from "./frame-locator.js";
+import { applySelectOptions, inspectLocatedControl, normalizeSelections } from "./form-controls.js";
 
 const HOST_NAME = "org.universal_browser.bridge";
 const CDP_VERSION = "1.3";
@@ -38,7 +40,19 @@ const cursorPositionsByTab = new Map();
 const jsDialogsByTab = new Map();
 const dialogOpenWaitersByTab = new Map();
 const dialogCloseWaitersByTab = new Map();
+const networkRequestsByTab = new Map();
+const networkIdleSinceByTab = new Map();
+const downloadWaitersByTab = new Map();
+const downloadsByGuid = new Map();
+const fileChooserWaitersByTab = new Map();
+const fileChoosers = new Map();
+const consoleLogsByTab = new Map();
+const oopifSessionsByTab = new Map();
+const oopifSessionWaitersByTab = new Map();
+const createdTabs = [];
 let nextDialogId = 1;
+let nextFileChooserId = 1;
+let consoleSequence = 0;
 const tabOperationQueue = createTabOperationQueue();
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -67,6 +81,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (source.tabId != null && method === "Target.attachedToTarget" && params?.targetInfo?.type === "iframe" && params.sessionId) {
+    void registerOopifSession(source.tabId, params.sessionId);
+  }
+  if (source.tabId != null && method === "Target.detachedFromTarget") {
+    const sessions = oopifSessionsByTab.get(source.tabId);
+    for (const [frameId, sessionId] of sessions || []) if (sessionId === params?.sessionId) sessions.delete(frameId);
+  }
+  if (source.tabId != null && method === "Page.downloadWillBegin") {
+    const item = { guid: params.guid, url: params.url, suggestedFilename: params.suggestedFilename, tabId: source.tabId, startedAt: Date.now() };
+    downloadsByGuid.set(params.guid, item);
+    for (const resolve of downloadWaitersByTab.get(source.tabId) || []) resolve(item);
+  }
+  if (source.tabId != null && method === "Page.fileChooserOpened") {
+    const chooser = { id: String(nextFileChooserId++), tabId: source.tabId, backendNodeId: params.backendNodeId, frameId: params.frameId, mode: params.mode, createdAt: Date.now() };
+    fileChoosers.set(chooser.id, chooser);
+    for (const resolve of fileChooserWaitersByTab.get(source.tabId) || []) resolve(chooser);
+  }
+  if (source.tabId != null && method === "Runtime.consoleAPICalled") recordConsoleLog(source.tabId, {
+    level: normalizeConsoleLevel(params.type), timestamp: Number(params.timestamp) || Date.now(),
+    text: summarizeConsoleArgs(params.args), url: params.stackTrace?.callFrames?.[0]?.url || ""
+  });
+  if (source.tabId != null && method === "Log.entryAdded") recordConsoleLog(source.tabId, {
+    level: normalizeConsoleLevel(params.entry?.level), timestamp: Number(params.entry?.timestamp) || Date.now(),
+    text: String(params.entry?.text || "").slice(0, 10000), url: params.entry?.url || ""
+  });
+  if (source.tabId != null && method === "Runtime.exceptionThrown") recordConsoleLog(source.tabId, {
+    level: "error", timestamp: Number(params.timestamp) || Date.now(),
+    text: String(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || "Uncaught exception").slice(0, 10000),
+    url: params.exceptionDetails?.url || params.exceptionDetails?.stackTrace?.callFrames?.[0]?.url || ""
+  });
+  if (source.tabId != null && method === "Network.requestWillBeSent" && !["WebSocket", "EventSource"].includes(params?.type)) {
+    const pending = networkRequestsByTab.get(source.tabId) || new Set();
+    pending.add(params.requestId);
+    networkRequestsByTab.set(source.tabId, pending);
+    networkIdleSinceByTab.delete(source.tabId);
+  }
+  if (source.tabId != null && ["Network.loadingFinished", "Network.loadingFailed"].includes(method)) {
+    const pending = networkRequestsByTab.get(source.tabId);
+    pending?.delete(params?.requestId);
+    if (!pending?.size) networkIdleSinceByTab.set(source.tabId, Date.now());
+  }
   if (source.tabId != null && method === "Page.javascriptDialogOpening") {
     const dialog = {
       id: String(nextDialogId++),
@@ -87,7 +142,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 });
 
 chrome.debugger.onDetach.addListener((source, reason) => {
-  if (source.tabId != null) debuggerController.handleDetached(source.tabId);
+  if (source.tabId != null) {
+    debuggerController.handleDetached(source.tabId);
+    oopifSessionsByTab.delete(source.tabId);
+    rejectOopifWaiters(source.tabId, "The tab debugger detached before the cross-process frame became available");
+  }
   recordEvent({ source, method: "Debugger.detached", params: { reason } });
 });
 
@@ -100,6 +159,18 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   jsDialogsByTab.delete(tabId);
   dialogOpenWaitersByTab.delete(tabId);
   dialogCloseWaitersByTab.delete(tabId);
+  networkRequestsByTab.delete(tabId);
+  networkIdleSinceByTab.delete(tabId);
+  downloadWaitersByTab.delete(tabId);
+  fileChooserWaitersByTab.delete(tabId);
+  consoleLogsByTab.delete(tabId);
+  oopifSessionsByTab.delete(tabId);
+  rejectOopifWaiters(tabId, "The tab closed before the cross-process frame became available");
+  for (const [id, chooser] of fileChoosers) if (chooser.tabId === tabId) fileChoosers.delete(id);
+});
+chrome.tabs.onCreated.addListener((tab) => {
+  createdTabs.push({ tabId: tab.id, openerTabId: tab.openerTabId, createdAt: Date.now() });
+  if (createdTabs.length > 200) createdTabs.splice(0, createdTabs.length - 200);
 });
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   tabOperationQueue.cancel(removedTabId);
@@ -111,6 +182,14 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   jsDialogsByTab.delete(removedTabId);
   dialogOpenWaitersByTab.delete(removedTabId);
   dialogCloseWaitersByTab.delete(removedTabId);
+  networkRequestsByTab.delete(removedTabId);
+  networkIdleSinceByTab.delete(removedTabId);
+  downloadWaitersByTab.delete(removedTabId);
+  fileChooserWaitersByTab.delete(removedTabId);
+  consoleLogsByTab.delete(removedTabId);
+  oopifSessionsByTab.delete(removedTabId);
+  rejectOopifWaiters(removedTabId, "The tab was replaced before the cross-process frame became available");
+  for (const [id, chooser] of fileChoosers) if (chooser.tabId === removedTabId) fileChoosers.delete(id);
   if (wasControlled) {
     recordEvent({ source: { tabId: removedTabId }, method: "Browser.tabReplaced", params: { addedTabId } });
   }
@@ -180,13 +259,48 @@ async function execute(method, params) {
   if (!settings.enabled) throw codedError("EXTENSION_DISABLED", "Browser control is disabled in extension settings");
 
   switch (method) {
+    case "_bridge.resolveFramePath": {
+      const tabId = await authorizedTab(params, settings);
+      const context = await resolveFrameContext(tabId, params.framePath);
+      return { frames: context.chain.slice(1).map(({ frameId, loaderId, url }) => ({ frameId, loaderId, url })) };
+    }
+    case "_bridge.inspectUnsavedWork": {
+      const tabId = requireTabId(params);
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab) throw codedError("TAB_NOT_FOUND", `Tab ${tabId} was not found`);
+      const unsaved = await chrome.scripting.executeScript({ target: { tabId }, func: () => {
+        const changed = [...document.querySelectorAll("input,textarea,select")].some((element) => {
+          if (element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)) return element.checked !== element.defaultChecked;
+          if (element instanceof HTMLSelectElement) return [...element.options].some((option) => option.selected !== option.defaultSelected);
+          return "value" in element && String(element.value) !== String(element.defaultValue ?? "");
+        });
+        return changed;
+      } }).then((results) => results[0]?.result === true).catch(() => true);
+      return { unsaved };
+    }
+    case "_bridge.consumeCreatedTabs": {
+      const openerTabId = requireTabId(params);
+      const since = Number(params.since) || 0;
+      const settleMs = Math.max(0, Math.min(Number(params.settleMs) || 0, 500));
+      if (settleMs) await delay(settleMs);
+      const matches = createdTabs.filter((entry) => entry.openerTabId === openerTabId && entry.createdAt >= since);
+      for (const match of matches) createdTabs.splice(createdTabs.indexOf(match), 1);
+      return { tabIds: matches.map((entry) => entry.tabId) };
+    }
+    case "_bridge.resolveDownloadTarget": {
+      const tabId = await authorizedTab(params, settings);
+      const target = await locate(tabId, params.locator, params.framePath);
+      const result = await evaluateInContext(tabId, target.frameContext.contextId, `(${inspectDownloadTarget.toString()})(${JSON.stringify(params.locator)})`, true, target.frameContext.sessionId);
+      if (!result?.ok) throw codedError(result?.code || "DOWNLOAD_TARGET_INVALID", result?.message || "Download target is invalid");
+      return result.value;
+    }
     case "browser.getInfo":
       return {
         name: "Lingee Chrome Agent Bridge",
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1" },
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -213,6 +327,7 @@ async function execute(method, params) {
       try {
         await assertTabNotBlocked(tabId, settings);
         await ensureDebugger(tabId);
+        await sendCdp(tabId, "Log.enable", {});
         return await chrome.tabs.get(tabId);
       } catch (error) {
         const stage = error.data?.stage || "claim";
@@ -267,19 +382,27 @@ async function execute(method, params) {
     case "browser.domSnapshot":
       return evaluateValue(await authorizedTab(params, settings), domSnapshotExpression(params));
     case "browser.locatorCount":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "count", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings), params.locator, "count", params, params.framePath);
     case "browser.locatorAllTextContents":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxResults", "maxCharsPerItem", "maxTotalChars"]), settings), params.locator, "allTextContents", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxResults", "maxCharsPerItem", "maxTotalChars"]), settings), params.locator, "allTextContents", params, params.framePath);
     case "browser.locatorInnerText":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxChars"]), settings), params.locator, "innerText", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxChars"]), settings), params.locator, "innerText", params, params.framePath);
     case "browser.locatorTextContent":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "maxChars"]), settings), params.locator, "textContent", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxChars"]), settings), params.locator, "textContent", params, params.framePath);
     case "browser.locatorGetAttribute":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "name", "maxChars"]), settings), params.locator, "getAttribute", { ...params, name: requireString(params.name, "name") });
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "name", "maxChars"]), settings), params.locator, "getAttribute", { ...params, name: requireString(params.name, "name") }, params.framePath);
     case "browser.locatorIsVisible":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "isVisible", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings), params.locator, "isVisible", params, params.framePath);
     case "browser.locatorIsEnabled":
-      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator"]), settings), params.locator, "isEnabled", params);
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings), params.locator, "isEnabled", params, params.framePath);
+    case "browser.waitFor":
+      return waitForLocatorState(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "state", "timeoutMs"]), settings), params.locator, params.framePath, params.state, params.timeoutMs);
+    case "browser.waitForURL":
+      return waitForUrl(await authorizedTab(assertOnlyParams(params, ["tabId", "url", "match", "waitUntil", "timeoutMs"]), settings), requireString(params.url, "url"), params);
+    case "browser.waitForLoadState":
+      return waitForLoadState(await authorizedTab(assertOnlyParams(params, ["tabId", "state", "timeoutMs"]), settings), params.state, params.timeoutMs);
+    case "browser.expectNavigation":
+      return expectNavigation(assertOnlyParams(params, ["tabId", "action", "url", "match", "waitUntil", "timeoutMs"]), settings);
     case "browser.accessibilitySnapshot":
       return sendCdp(await authorizedTab(params, settings), "Accessibility.getFullAXTree", {});
     case "browser.screenshot": {
@@ -293,16 +416,48 @@ async function execute(method, params) {
       return { data: result.data, mimeType: params.format === "jpeg" ? "image/jpeg" : "image/png" };
     }
     case "browser.click":
-      return runPointerOperation(params, settings, (tabId) => clickLocator(tabId, params.locator, params.button || "left", params.clickCount || 1));
+      return runPointerOperation(params, settings, (tabId) => clickLocator(tabId, params.locator, params.button || "left", params.clickCount || 1, params.framePath));
     case "browser.fill":
-      return runPointerOperation(params, settings, (tabId) => fillLocator(tabId, params.locator, String(params.value ?? "")));
+      return runPointerOperation(params, settings, (tabId) => fillLocator(tabId, params.locator, String(params.value ?? ""), params.framePath));
+    case "browser.check":
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings, (tabId) => setCheckedLocator(tabId, params.locator, true, params.framePath));
+    case "browser.uncheck":
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings, (tabId) => setCheckedLocator(tabId, params.locator, false, params.framePath));
+    case "browser.setChecked":
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "locator", "framePath", "checked"]), settings, (tabId) => setCheckedLocator(tabId, params.locator, requireBoolean(params.checked, "checked"), params.framePath));
+    case "browser.selectOption":
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "locator", "framePath", "options"]), settings, (tabId) => selectOptionLocator(tabId, params.locator, params.options, params.framePath));
+    case "browser.doubleClick":
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "locator", "framePath", "button"]), settings, (tabId) => doubleClickLocator(tabId, params.locator, params.button || "left", params.framePath));
+    case "browser.pressSequentially":
+      return runControlledOperation(assertOnlyParams(params, ["tabId", "locator", "framePath", "text", "delayMs", "timeoutMs"]), settings, (tabId) => pressSequentially(tabId, params.locator, String(params.text ?? ""), params.framePath, params.delayMs, params.timeoutMs));
+    case "browser.waitForDownload":
+      return waitForDownload(assertOnlyParams(params, ["tabId", "action", "timeoutMs"]), settings);
+    case "browser.downloadMedia":
+      return downloadMedia(assertOnlyParams(params, ["tabId", "locator", "framePath", "timeoutMs"]), settings);
+    case "browser.waitForFileChooser":
+      return waitForFileChooser(assertOnlyParams(params, ["tabId", "action", "timeoutMs"]), settings);
+    case "browser.setFileChooserFiles":
+      return runControlledOperation(assertOnlyParams(params, ["tabId", "chooserId", "files"]), settings, (tabId) => setFileChooserFiles(tabId, params.chooserId, params.files));
     case "browser.press":
-      return pressKey(await authorizedTab(params, settings), requireString(params.key, "key"), params.modifiers || []);
-    case "browser.type": {
-      const tabId = await authorizedTab(params, settings);
-      await sendCdp(tabId, "Input.insertText", { text: String(params.text ?? "") });
-      return { typed: true, length: String(params.text ?? "").length };
-    }
+      return runControlledOperation(params, settings, async (tabId) => {
+        if (params.framePath && !params.locator) throw codedError("INVALID_PARAMS", "framePath requires locator for browser.press");
+        if (params.locator) {
+          const target = await locate(tabId, params.locator, params.framePath);
+          await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
+        }
+        return pressKey(tabId, requireString(params.key, "key"), params.modifiers || []);
+      });
+    case "browser.type":
+      return runControlledOperation(params, settings, async (tabId) => {
+        if (params.framePath && !params.locator) throw codedError("INVALID_PARAMS", "framePath requires locator for browser.type");
+        if (params.locator) {
+          const target = await locate(tabId, params.locator, params.framePath);
+          await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
+        }
+        await sendCdp(tabId, "Input.insertText", { text: String(params.text ?? "") });
+        return { typed: true, length: String(params.text ?? "").length };
+      });
     case "browser.mouseMove": {
       const x = number(params.x, 0); const y = number(params.y, 0);
       return runPointerOperation(params, settings, async (tabId) => {
@@ -341,7 +496,7 @@ async function execute(method, params) {
       });
     }
     case "browser.setFileInput":
-      return setFileInput(await authorizedTab(params, settings), requireString(params.selector, "selector"), params.files);
+      return runControlledOperation(params, settings, (tabId) => setFileInput(tabId, requireString(params.selector, "selector"), params.files, params.framePath));
     case "browser.getDialog": {
       const tabId = await controlledDialogTab(params, settings);
       return jsDialogsByTab.get(tabId) || null;
@@ -352,6 +507,8 @@ async function execute(method, params) {
       return sendCdp(await authorizedTab(params, settings), requireString(params.command, "command"), params.params || {});
     case "browser.getEvents":
       return getEvents(params);
+    case "browser.getConsoleLogs":
+      return getConsoleLogs(await authorizedTab(assertOnlyParams(params, ["tabId", "afterSequence", "limit", "levels", "text"]), settings), params);
     case "browser.historySearch":
       return chrome.history.search({ text: params.text || "", startTime: params.startTime, endTime: params.endTime, maxResults: params.maxResults || 100 });
     case "browser.bookmarkSearch":
@@ -414,6 +571,10 @@ async function handleJavaScriptDialog(params, settings) {
 }
 
 function runPointerOperation(params, settings, operation) {
+  return runControlledOperation(params, settings, operation);
+}
+
+function runControlledOperation(params, settings, operation) {
   const tabId = requireTabId(params);
   return tabOperationQueue.run(tabId, async () => {
     await assertTabNotBlocked(tabId, settings);
@@ -430,10 +591,33 @@ async function ensureDebugger(tabId) {
 
 async function detachDebugger(tabId) {
   try {
+    if (attachedTabs.has(tabId)) {
+      await boundedCleanup(chrome.debugger.sendCommand({ tabId }, "Target.setAutoAttach", {
+        autoAttach: false,
+        waitForDebuggerOnStart: false,
+        flatten: true
+      }), 1500).catch(() => {});
+    }
     return await debuggerController.detach(tabId);
   } finally {
     cursorPositionsByTab.delete(tabId);
+    oopifSessionsByTab.delete(tabId);
+    rejectOopifWaiters(tabId, "The tab debugger detached before the cross-process frame became available");
   }
+}
+
+function boundedCleanup(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(codedError("CLEANUP_TIMEOUT", `Browser cleanup exceeded ${timeoutMs}ms`)), timeoutMs))
+  ]);
+}
+
+function boundedBrowserCall(promise, timeoutMs, code, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(codedError(code, message)), timeoutMs))
+  ]);
 }
 
 async function installForeignFrameMonitorInTab(tabId) {
@@ -576,17 +760,100 @@ async function sendCdp(tabId, method, params = {}) {
   return chrome.debugger.sendCommand({ tabId }, method, compact(params));
 }
 
+async function sendCdpInSession(tabId, sessionId, method, params = {}) {
+  await ensureDebugger(tabId);
+  return chrome.debugger.sendCommand(sessionId ? { tabId, sessionId } : { tabId }, method, compact(params));
+}
+
+async function getOopifSession(tabId, frameId) {
+  const sessions = oopifSessionsByTab.get(tabId) || new Map();
+  oopifSessionsByTab.set(tabId, sessions);
+  const existing = sessions.get(frameId);
+  if (existing) {
+    try {
+      const { frameTree } = await sendCdpInSession(tabId, existing, "Page.getFrameTree", {});
+      if (frameTree?.frame?.id === frameId) return existing;
+    } catch {}
+    sessions.delete(frameId);
+  }
+  try {
+    await sendCdp(tabId, "Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: "iframe", exclude: false }]
+    });
+    return await waitForOopifSession(tabId, frameId);
+  } catch (error) {
+    throw codedError("FRAME_INACCESSIBLE", "The cross-process frame target could not be auto-attached", { frameId, reason: String(error?.message || error).slice(0, 300) });
+  }
+}
+
+async function registerOopifSession(tabId, sessionId) {
+  try {
+    const { frameTree } = await chrome.debugger.sendCommand({ tabId, sessionId }, "Page.getFrameTree", {});
+    const frameId = frameTree?.frame?.id;
+    if (!frameId) return;
+    const sessions = oopifSessionsByTab.get(tabId) || new Map();
+    sessions.set(frameId, sessionId);
+    oopifSessionsByTab.set(tabId, sessions);
+    const waiter = oopifSessionWaitersByTab.get(tabId)?.get(frameId);
+    if (waiter) waiter.resolve(sessionId);
+    await chrome.debugger.sendCommand({ tabId, sessionId }, "Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: "iframe", exclude: false }]
+    });
+  } catch {}
+}
+
+function waitForOopifSession(tabId, frameId, timeoutMs = 2000) {
+  const existing = oopifSessionsByTab.get(tabId)?.get(frameId);
+  if (existing) return Promise.resolve(existing);
+  const waiters = oopifSessionWaitersByTab.get(tabId) || new Map();
+  oopifSessionWaitersByTab.set(tabId, waiters);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      waiters.delete(frameId);
+      if (!waiters.size) oopifSessionWaitersByTab.delete(tabId);
+      reject(codedError("FRAME_INACCESSIBLE", "Timed out waiting for the cross-process frame debugger session", { frameId }));
+    }, timeoutMs);
+    waiters.set(frameId, {
+      resolve: (sessionId) => {
+        clearTimeout(timer);
+        waiters.delete(frameId);
+        if (!waiters.size) oopifSessionWaitersByTab.delete(tabId);
+        resolve(sessionId);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        waiters.delete(frameId);
+        if (!waiters.size) oopifSessionWaitersByTab.delete(tabId);
+        reject(error);
+      }
+    });
+  });
+}
+
+function rejectOopifWaiters(tabId, message) {
+  const waiters = oopifSessionWaitersByTab.get(tabId);
+  if (!waiters) return;
+  for (const { reject } of waiters.values()) reject(codedError("FRAME_INACCESSIBLE", message));
+  oopifSessionWaitersByTab.delete(tabId);
+}
+
 async function showVirtualCursor(tabId, x, y, phase, details = {}) {
   try {
     const previous = cursorPositionsByTab.get(tabId);
     const effectiveX = x == null && previous ? previous.x : x;
     const effectiveY = y == null && previous ? previous.y : y;
-    const results = await chrome.scripting.executeScript({
+    const results = await boundedBrowserCall(chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
       func: renderVirtualCursor,
       args: [VIRTUAL_CURSOR_KEY, effectiveX, effectiveY, phase, details, chrome.runtime.getURL("icons/lingee-48.png")],
       injectImmediately: true
-    });
+    }), 2500, "CURSOR_RENDER_TIMEOUT", "Virtual cursor rendering timed out");
     const rendered = results?.[0]?.result;
     if (Number.isFinite(rendered?.x) && Number.isFinite(rendered?.y)) {
       cursorPositionsByTab.set(tabId, { x: rendered.x, y: rendered.y, documentId: results?.[0]?.documentId });
@@ -649,6 +916,118 @@ async function evaluateValue(tabId, expression) {
   return response.result?.value;
 }
 
+async function evaluateInContext(tabId, contextId, expression, returnByValue = true, sessionId = null) {
+  const response = await sendCdpInSession(tabId, sessionId, "Runtime.evaluate", {
+    contextId,
+    expression,
+    awaitPromise: true,
+    returnByValue,
+    userGesture: false
+  });
+  if (response.exceptionDetails) throwPageException(response.exceptionDetails);
+  return returnByValue ? response.result?.value : response.result;
+}
+
+function throwPageException(details) {
+  const description = details.exception?.description || details.text || "Page evaluation failed";
+  const marker = description.match(/LINGEE_FRAME:(\{[^\n]+\})/);
+  if (marker) {
+    try {
+      const failure = JSON.parse(marker[1]);
+      throw codedError(failure.code || "FRAME_INACCESSIBLE", failure.message || "Frame resolution failed", failure.data);
+    } catch (error) {
+      if (error?.code) throw error;
+    }
+  }
+  throw codedError("PAGE_EVALUATION_FAILED", details.text || description);
+}
+
+async function resolveFrameContext(tabId, framePath, scrollFrames = true) {
+  const path = validateFramePath(framePath);
+  const topDocument = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+  const { frameTree } = await sendCdp(tabId, "Page.getFrameTree", {});
+  let current = frameTree.frame;
+  let sessionId = null;
+  let offsetX = 0;
+  let offsetY = 0;
+  const chain = [{ frameId: current.id, loaderId: current.loaderId, url: current.url, sessionId }];
+  for (let index = 0; index < path.length; index += 1) {
+    const ownerSessionId = sessionId;
+    let context;
+    try {
+      context = await sendCdpInSession(tabId, ownerSessionId, "Page.createIsolatedWorld", { frameId: current.id, worldName: FRAME_WORLD_NAME, grantUniveralAccess: false });
+    } catch (error) {
+      throw codedError("FRAME_INACCESSIBLE", `Frame at path index ${index} cannot create an isolated execution context`, { index });
+    }
+    const remote = await evaluateInContext(tabId, context.executionContextId, `(${resolveFrameElement.toString()})(${JSON.stringify(path[index])})`, false, ownerSessionId);
+    if (!remote?.objectId) throw codedError("FRAME_NOT_FOUND", `Frame at path index ${index} did not resolve to a frame element`, { index });
+    try {
+      const [described, geometry] = await Promise.all([
+        sendCdpInSession(tabId, ownerSessionId, "DOM.describeNode", { objectId: remote.objectId, depth: 0 }),
+        sendCdpInSession(tabId, ownerSessionId, "Runtime.callFunctionOn", {
+          objectId: remote.objectId,
+          functionDeclaration: scrollFrames
+            ? "function(){this.scrollIntoView({block:'center',inline:'center',behavior:'instant'});const r=this.getBoundingClientRect();return {left:r.left,top:r.top,clientLeft:this.clientLeft||0,clientTop:this.clientTop||0};}"
+            : "function(){const r=this.getBoundingClientRect();return {left:r.left,top:r.top,clientLeft:this.clientLeft||0,clientTop:this.clientTop||0};}",
+          returnByValue: true
+        })
+      ]);
+      const childFrameId = described.node?.frameId;
+      const { frameTree: latestFrameTree } = await sendCdpInSession(tabId, ownerSessionId, "Page.getFrameTree", {});
+      let child = flattenFrameTree(latestFrameTree).get(childFrameId);
+      let childSessionId = ownerSessionId;
+      if (!child) {
+        childSessionId = await getOopifSession(tabId, childFrameId);
+        const { frameTree: childFrameTree } = await sendCdpInSession(tabId, childSessionId, "Page.getFrameTree", {});
+        child = childFrameTree?.frame?.id === childFrameId ? childFrameTree.frame : null;
+      } else if (child.parentId !== current.id) {
+        throw codedError("FRAME_INACCESSIBLE", `Resolved frame at path index ${index} is attached to a different parent`, { index });
+      }
+      if (!child) throw codedError("FRAME_INACCESSIBLE", `Resolved frame at path index ${index} is unavailable or changed`, { index });
+      const rect = geometry.result?.value;
+      if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.top)) throw codedError("FRAME_INACCESSIBLE", `Frame geometry at path index ${index} is unavailable`, { index });
+      offsetX += rect.left + (Number(rect.clientLeft) || 0);
+      offsetY += rect.top + (Number(rect.clientTop) || 0);
+      current = child;
+      sessionId = childSessionId;
+      chain.push({ frameId: current.id, loaderId: current.loaderId, url: current.url, sessionId });
+    } finally {
+      await sendCdpInSession(tabId, ownerSessionId, "Runtime.releaseObject", { objectId: remote.objectId }).catch(() => {});
+    }
+  }
+  let context;
+  try {
+    context = await sendCdpInSession(tabId, sessionId, "Page.createIsolatedWorld", { frameId: current.id, worldName: FRAME_WORLD_NAME, grantUniveralAccess: false });
+  } catch {
+    throw codedError("FRAME_INACCESSIBLE", "The target frame cannot create an isolated execution context");
+  }
+  return { contextId: context.executionContextId, frameId: current.id, loaderId: current.loaderId, sessionId, offsetX, offsetY, chain, topDocumentId: topDocument?.documentId };
+}
+
+function flattenFrameTree(root, result = new Map()) {
+  if (!root?.frame) return result;
+  result.set(root.frame.id, root.frame);
+  for (const child of root.childFrames || []) flattenFrameTree(child, result);
+  return result;
+}
+
+async function assertFrameContextFresh(tabId, context) {
+  if (!context?.chain?.length) return;
+  for (const expected of context.chain) {
+    let frameTree;
+    try {
+      ({ frameTree } = await sendCdpInSession(tabId, expected.sessionId, "Page.getFrameTree", {}));
+    } catch {
+      throw codedError("FRAME_CONTEXT_CHANGED", "A frame debugger session changed before the operation could complete", { frameId: expected.frameId });
+    }
+    const frames = flattenFrameTree(frameTree);
+    const actual = frames.get(expected.frameId);
+    if (!actual || actual.loaderId !== expected.loaderId) {
+      throw codedError("FRAME_CONTEXT_CHANGED", "A frame document changed before the operation could complete", { frameId: expected.frameId });
+    }
+  }
+}
+
 async function sendPointerCdp(tabId, method, params = {}, expectedDocumentId) {
   if (!controlledTabs.has(tabId)) throw codedError("POINTER_CONTROL_LOST", `Tab ${tabId} is no longer controlled`);
   if (expectedDocumentId) await assertPointerDocument(tabId, expectedDocumentId);
@@ -677,26 +1056,30 @@ async function evaluateAttachedValue(tabId, expression, expectedDocumentId) {
   return response.result?.value;
 }
 
-async function clickLocator(tabId, locator, button, clickCount) {
-  const target = await locate(tabId, locator);
-  const click = await clickCoordinates(tabId, target.x, target.y, button, clickCount);
-  return { ...target, ...click };
+async function clickLocator(tabId, locator, button, clickCount, framePath) {
+  const target = await locate(tabId, locator, framePath);
+  const click = await clickCoordinates(tabId, target.x, target.y, button, clickCount, target.frameContext);
+  const { frameContext: _context, ...publicTarget } = target;
+  return { ...publicTarget, ...click };
 }
 
-async function clickCoordinates(tabId, x, y, button, clickCount) {
+async function clickCoordinates(tabId, x, y, button, clickCount, frameContext) {
+  await assertFrameContextFresh(tabId, frameContext);
   const movement = await moveVirtualCursor(tabId, x, y);
+  await assertFrameContextFresh(tabId, frameContext);
   await requireVirtualCursor(tabId, x, y, "pressed", { waitForPaint: true }, movement.documentId);
   let pressed = false;
   try {
-    await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button, clickCount }, movement.documentId);
+    await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button, buttons: mouseButtonMask(button), clickCount }, movement.documentId);
     pressed = true;
     await waitForCursorMotion(CURSOR_PRESS_HOLD_MS);
-    const release = await dispatchMouseReleaseOrDialog(tabId, { type: "mouseReleased", x, y, button, clickCount }, movement.documentId);
+    await assertFrameContextFresh(tabId, frameContext);
+    const release = await dispatchMouseReleaseOrDialog(tabId, { type: "mouseReleased", x, y, button, buttons: 0, clickCount }, movement.documentId);
     pressed = false;
     if (release.dialogOpened) return release;
   } finally {
     if (pressed) {
-      await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button, clickCount }).catch(() => {});
+      await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button, buttons: 0, clickCount }).catch(() => {});
     }
   }
   try {
@@ -711,6 +1094,24 @@ async function clickCoordinates(tabId, x, y, button, clickCount) {
     }
     throw error;
   }
+}
+
+async function doubleClickLocator(tabId, locator, button, framePath) {
+  if (!["left", "middle", "right"].includes(button)) throw codedError("INVALID_PARAMS", "button must be left, middle, or right");
+  const target = await locate(tabId, locator, framePath);
+  await assertFrameContextFresh(tabId, target.frameContext);
+  const movement = await moveVirtualCursor(tabId, target.x, target.y);
+  for (const clickCount of [1, 2]) {
+    await assertFrameContextFresh(tabId, target.frameContext);
+    await requireVirtualCursor(tabId, target.x, target.y, "pressed", { waitForPaint: true }, movement.documentId);
+    await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", x: target.x, y: target.y, button, buttons: mouseButtonMask(button), clickCount }, movement.documentId);
+    await waitForCursorMotion(50);
+    await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", x: target.x, y: target.y, button, buttons: 0, clickCount }, movement.documentId);
+    if (clickCount === 1) await waitForCursorMotion(70);
+  }
+  await requireVirtualCursor(tabId, target.x, target.y, "click", { doubleClick: true, waitForPaint: true }, movement.documentId);
+  await waitForCursorMotion(CLICK_FEEDBACK_MS);
+  return { x: target.x, y: target.y, button, clickCount: 2, doubleClicked: true };
 }
 
 async function dispatchMouseReleaseOrDialog(tabId, params, expectedDocumentId) {
@@ -734,22 +1135,87 @@ async function dispatchMouseReleaseOrDialog(tabId, params, expectedDocumentId) {
   }
 }
 
-async function fillLocator(tabId, locator, value) {
-  const target = await locate(tabId, locator);
-  await clickCoordinates(tabId, target.x, target.y, "left", 1);
+function mouseButtonMask(button) {
+  return { left: 1, right: 2, middle: 4, back: 8, forward: 16 }[button] || 0;
+}
+
+async function fillLocator(tabId, locator, value, framePath) {
+  const target = await locate(tabId, locator, framePath);
+  await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
+  await assertFrameContextFresh(tabId, target.frameContext);
   await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
   await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
   await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace" });
   await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace" });
   if (value) await sendPointerCdp(tabId, "Input.insertText", { text: value });
-  return { ...target, filled: true };
+  const { frameContext: _context, ...publicTarget } = target;
+  return { ...publicTarget, filled: true };
+}
+
+async function setCheckedLocator(tabId, locator, checked, framePath) {
+  const target = await locate(tabId, locator, framePath);
+  const before = await inspectControl(tabId, target.frameContext, locator);
+  if (!before.visible || !before.enabled) throw codedError("CONTROL_NOT_INTERACTABLE", "Checkbox or radio must be visible and enabled");
+  if (!["checkbox", "radio"].includes(before.type)) throw codedError("CONTROL_TYPE_MISMATCH", "browser.setChecked requires a checkbox or radio input", { type: before.type });
+  if (before.type === "radio" && checked === false) throw codedError("CONTROL_TYPE_MISMATCH", "Radio inputs cannot be unchecked directly");
+  if (before.checked !== checked) await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
+  const after = await inspectControl(tabId, target.frameContext, locator);
+  if (after.checked !== checked) throw codedError("CONTROL_STATE_MISMATCH", "The control did not reach the requested checked state", { expected: checked, actual: after.checked });
+  return { checked: after.checked, changed: before.checked !== after.checked, type: after.type };
+}
+
+async function selectOptionLocator(tabId, locator, selections, framePath) {
+  const normalized = normalizeSelections(selections);
+  const target = await locate(tabId, locator, framePath);
+  const before = await inspectControl(tabId, target.frameContext, locator);
+  if (!before.visible || !before.enabled) throw codedError("CONTROL_NOT_INTERACTABLE", "Select must be visible and enabled");
+  if (before.tagName !== "SELECT") throw codedError("CONTROL_TYPE_MISMATCH", "browser.selectOption requires a native select element", { tagName: before.tagName });
+  if (!before.multiple && normalized.length > 1) throw codedError("CONTROL_TYPE_MISMATCH", "A single-select control accepts only one option");
+  await moveVirtualCursor(tabId, target.x, target.y);
+  await assertFrameContextFresh(tabId, target.frameContext);
+  const result = await evaluateInContext(tabId, target.frameContext.contextId, `(${applySelectOptions.toString()})(${JSON.stringify(locator)}, ${JSON.stringify(normalized)})`, true, target.frameContext.sessionId);
+  if (!result?.ok) throw codedError(result?.code || "CONTROL_STATE_MISMATCH", result?.message || "Option selection failed", result?.data);
+  const after = await inspectControl(tabId, target.frameContext, locator);
+  if (JSON.stringify(after.selectedValues) !== JSON.stringify(result.values)) throw codedError("CONTROL_STATE_MISMATCH", "Select value verification failed");
+  return { values: after.selectedValues, labels: after.selectedLabels, multiple: after.multiple };
+}
+
+async function pressSequentially(tabId, locator, text, framePath, delayMs, timeoutMs) {
+  const delayPerCharacter = delayMs == null ? 40 : Number(delayMs);
+  if (!Number.isInteger(delayPerCharacter) || delayPerCharacter < 0 || delayPerCharacter > 1000) throw codedError("INVALID_PARAMS", "delayMs must be an integer between 0 and 1000");
+  const timeout = boundedTimeout(timeoutMs, 30000);
+  if (text.length > 10000) throw codedError("INVALID_PARAMS", "text cannot exceed 10000 characters");
+  const target = await locate(tabId, locator, framePath);
+  const before = await inspectControl(tabId, target.frameContext, locator);
+  if (!before.visible || !before.enabled || !before.editable) throw codedError("CONTROL_NOT_INTERACTABLE", "Sequential input requires a visible enabled editable control");
+  await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
+  const started = Date.now();
+  let typedLength = 0;
+  for (const character of text) {
+    if (Date.now() - started + delayPerCharacter > timeout) throw codedError("INPUT_TIMEOUT", `Sequential input exceeded ${timeout}ms`, { typedLength });
+    await assertFrameContextFresh(tabId, target.frameContext);
+    await sendPointerCdp(tabId, "Input.insertText", { text: character });
+    typedLength += character.length;
+    if (delayPerCharacter) await delay(delayPerCharacter);
+  }
+  const after = await inspectControl(tabId, target.frameContext, locator);
+  if (typeof after.value !== "string" || !after.value.endsWith(text)) throw codedError("CONTROL_STATE_MISMATCH", "Sequential input final value verification failed");
+  return { typed: true, length: text.length, valueLength: after.value.length, elapsedMs: Date.now() - started };
+}
+
+async function inspectControl(tabId, frameContext, locator) {
+  const result = await evaluateInContext(tabId, frameContext.contextId, `(${inspectLocatedControl.toString()})(${JSON.stringify(locator)})`, true, frameContext.sessionId);
+  if (!result?.ok) throw codedError(result?.code || "LOCATOR_NOT_FOUND", result?.message || "Control inspection failed", result?.data);
+  return result.value;
 }
 
 async function drag(tabId, params) {
-  const from = params.from?.locator ? await locate(tabId, params.from.locator) : { x: number(params.from?.x, 0), y: number(params.from?.y, 0) };
-  const to = params.to?.locator ? await locate(tabId, params.to.locator) : { x: number(params.to?.x, 0), y: number(params.to?.y, 0) };
+  const from = params.from?.locator ? await locate(tabId, params.from.locator, params.from.framePath) : { x: number(params.from?.x, 0), y: number(params.from?.y, 0) };
+  const to = params.to?.locator ? await locate(tabId, params.to.locator, params.to.framePath) : { x: number(params.to?.x, 0), y: number(params.to?.y, 0) };
   const steps = Math.max(2, Math.min(Number(params.steps) || 12, 60));
   const movement = await moveVirtualCursor(tabId, from.x, from.y);
+  await assertFrameContextFresh(tabId, from.frameContext);
+  await assertFrameContextFresh(tabId, to.frameContext);
   await requireVirtualCursor(tabId, from.x, from.y, "pressed", { drag: true, originX: from.x, originY: from.y, waitForPaint: true }, movement.documentId);
   let pressed = false;
   let current = { x: from.x, y: from.y };
@@ -759,6 +1225,8 @@ async function drag(tabId, params) {
     for (let index = 1; index <= steps; index += 1) {
       const ratio = index / steps;
       current = { x: from.x + (to.x - from.x) * ratio, y: from.y + (to.y - from.y) * ratio };
+      await assertFrameContextFresh(tabId, from.frameContext);
+      await assertFrameContextFresh(tabId, to.frameContext);
       await requireVirtualCursor(tabId, current.x, current.y, "pressed", { drag: true, originX: from.x, originY: from.y, waitForPaint: true }, movement.documentId);
       await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x: current.x, y: current.y, button: "left", buttons: 1 }, movement.documentId);
       await waitForCursorMotion(DRAG_FRAME_MS);
@@ -784,17 +1252,26 @@ async function pressKey(tabId, key, modifiers) {
   return { key, modifiers };
 }
 
-async function locate(tabId, locator) {
-  const result = await evaluateValue(tabId, `(${resolveLocator.toString()})(${JSON.stringify(locator || {})})`);
+async function locate(tabId, locator, framePath) {
+  validateLocatorQuery(locator);
+  let frameContext = await resolveFrameContext(tabId, framePath);
+  let result = await evaluateInContext(tabId, frameContext.contextId, `(${resolveLocator.toString()})(${JSON.stringify(locator || {})}, true)`, true, frameContext.sessionId);
   if (!result) throw codedError("LOCATOR_NOT_FOUND", `No element matched locator ${JSON.stringify(locator)}`);
   if (result.ambiguous) throw codedError("LOCATOR_AMBIGUOUS", `Locator matched ${result.count} elements`, result);
-  return result;
+  if (frameContext.chain.length > 1) {
+    frameContext = await resolveFrameContext(tabId, framePath, false);
+    result = await evaluateInContext(tabId, frameContext.contextId, `(${resolveLocator.toString()})(${JSON.stringify(locator || {})}, false)`, true, frameContext.sessionId);
+    if (!result) throw codedError("LOCATOR_NOT_FOUND", `No element matched locator ${JSON.stringify(locator)} after frame scrolling`);
+    if (result.ambiguous) throw codedError("LOCATOR_AMBIGUOUS", `Locator matched ${result.count} elements after frame scrolling`, result);
+  }
+  return { ...result, x: result.x + frameContext.offsetX, y: result.y + frameContext.offsetY, frameId: frameContext.frameId, frameContext };
 }
 
-async function queryLocator(tabId, locator, operation, options) {
+async function queryLocator(tabId, locator, operation, options, framePath) {
   validateLocatorQuery(locator);
   validateLocatorQueryOptions(operation, options);
-  const result = await evaluateValue(tabId, `(${runLocatorQuery.toString()})(${JSON.stringify(locator)}, ${JSON.stringify(operation)}, ${JSON.stringify(options || {})})`);
+  const frameContext = await resolveFrameContext(tabId, framePath);
+  const result = await evaluateInContext(tabId, frameContext.contextId, `(${runLocatorQuery.toString()})(${JSON.stringify(locator)}, ${JSON.stringify(operation)}, ${JSON.stringify(options || {})})`, true, frameContext.sessionId);
   if (!result?.ok) {
     const failure = result?.error || { code: "BROWSER_ERROR", message: "Locator query failed" };
     throw codedError(failure.code, failure.message, failure.data);
@@ -802,13 +1279,257 @@ async function queryLocator(tabId, locator, operation, options) {
   return result.value;
 }
 
-async function setFileInput(tabId, selector, files) {
+async function waitForLocatorState(tabId, locator, framePath, state, timeoutMs) {
+  const expected = String(state || "visible");
+  if (!["attached", "detached", "visible", "hidden", "enabled", "disabled"].includes(expected)) {
+    throw codedError("INVALID_PARAMS", "state must be attached, detached, visible, hidden, enabled, or disabled");
+  }
+  const timeout = boundedTimeout(timeoutMs, 5000);
+  const started = Date.now();
+  let last = { count: 0, visibleCount: 0, enabledCount: 0 };
+  while (Date.now() - started <= timeout) {
+    try {
+      last = await queryLocator(tabId, locator, "state", {}, framePath);
+      if (last.count > 1) throw codedError("LOCATOR_AMBIGUOUS", `Locator matched ${last.count} elements`, { count: last.count });
+    } catch (error) {
+      if (["FRAME_NOT_FOUND", "FRAME_CONTEXT_CHANGED"].includes(error.code)) last = { count: 0, visibleCount: 0, enabledCount: 0 };
+      else throw error;
+    }
+    const matched = expected === "attached" ? last.count === 1
+      : expected === "detached" ? last.count === 0
+      : expected === "visible" ? last.visibleCount === 1
+      : expected === "hidden" ? last.count === 0 || last.visibleCount === 0
+      : expected === "enabled" ? last.count === 1 && last.enabledCount === 1
+      : last.count === 1 && last.enabledCount === 0;
+    if (matched) return { state: expected, elapsedMs: Date.now() - started, ...last };
+    await delay(100);
+  }
+  throw codedError("LOCATOR_WAIT_TIMEOUT", `Timed out after ${timeout}ms waiting for locator state ${expected}`, { state: expected, timeoutMs: timeout, ...last });
+}
+
+async function waitForUrl(tabId, expectedUrl, options = {}) {
+  const timeout = boundedTimeout(options.timeoutMs, 10000);
+  const started = Date.now();
+  while (Date.now() - started <= timeout) {
+    const tab = await chrome.tabs.get(tabId);
+    if (urlMatches(tab.url || "", expectedUrl, options.match)) {
+      if (options.waitUntil) await waitForLoadState(tabId, options.waitUntil, Math.max(1, timeout - (Date.now() - started)));
+      return { url: tab.url, elapsedMs: Date.now() - started };
+    }
+    await delay(100);
+  }
+  throw codedError("URL_WAIT_TIMEOUT", `Timed out after ${timeout}ms waiting for URL ${expectedUrl}`, { url: expectedUrl, timeoutMs: timeout });
+}
+
+async function waitForLoadState(tabId, state = "load", timeoutMs) {
+  const expected = String(state || "load").toLowerCase();
+  if (!["commit", "domcontentloaded", "load", "networkidle"].includes(expected)) {
+    throw codedError("INVALID_PARAMS", "state must be commit, domcontentloaded, load, or networkidle");
+  }
+  const timeout = boundedTimeout(timeoutMs, 10000);
+  const started = Date.now();
+  if (expected === "networkidle") {
+    await sendCdp(tabId, "Network.enable", {});
+    if (!(networkRequestsByTab.get(tabId)?.size)) networkIdleSinceByTab.set(tabId, Date.now());
+  }
+  while (Date.now() - started <= timeout) {
+    const top = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+    let readyState = "";
+    if (top?.documentId) readyState = await evaluateValue(tabId, "document.readyState").catch(() => "");
+    const pending = networkRequestsByTab.get(tabId)?.size || 0;
+    const idleFor = Date.now() - (networkIdleSinceByTab.get(tabId) || Date.now());
+    const matched = expected === "commit" ? Boolean(top?.documentId)
+      : expected === "domcontentloaded" ? ["interactive", "complete"].includes(readyState)
+      : expected === "load" ? readyState === "complete"
+      : readyState === "complete" && pending === 0 && idleFor >= 500;
+    if (matched) return { state: expected, url: top?.url, documentId: top?.documentId, elapsedMs: Date.now() - started };
+    await delay(100);
+  }
+  throw codedError("LOAD_STATE_TIMEOUT", `Timed out after ${timeout}ms waiting for load state ${expected}`, { state: expected, timeoutMs: timeout });
+}
+
+async function expectNavigation(params, settings) {
+  const tabId = requireTabId(params);
+  await assertTabNotBlocked(tabId, settings);
+  const action = params.action;
+  const allowed = new Set(["browser.click", "browser.press", "browser.navigate", "browser.back", "browser.forward", "browser.reload"]);
+  if (!action || !allowed.has(action.method)) throw codedError("INVALID_PARAMS", "action.method is not supported by browser.expectNavigation");
+  if (action.params?.tabId != null && action.params.tabId !== tabId) throw codedError("INVALID_PARAMS", "action tabId must match browser.expectNavigation tabId");
+  const before = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+  const timeout = boundedTimeout(params.timeoutMs, 10000);
+  const navigation = waitForNavigationChange(tabId, before, params.url, params.match, params.waitUntil, timeout);
+  void navigation.catch(() => {});
+  try {
+    const actionResult = await execute(action.method, { ...(action.params || {}), tabId });
+    return { actionResult, navigation: await navigation };
+  } catch (error) {
+    navigation.catch(() => {});
+    throw error;
+  }
+}
+
+async function waitForDownload(params, settings) {
+  const tabId = requireTabId(params);
+  await assertTabNotBlocked(tabId, settings);
+  await ensureDebugger(tabId);
+  const action = validateBoundAction(params.action, ["browser.click", "browser.coordinateClick"]);
+  const timeout = boundedTimeout(params.timeoutMs, 120000);
+  const startedAt = Date.now();
+  const pending = createTabWaiter(downloadWaitersByTab, tabId, timeout, "DOWNLOAD_TIMEOUT", "download");
+  void pending.promise.catch(() => {});
+  try {
+    const actionResult = await execute(action.method, { ...(action.params || {}), tabId });
+    const started = await pending.promise;
+    const download = await waitForChromeDownload(started, Math.max(1, timeout - (Date.now() - startedAt)));
+    return { actionResult, download };
+  } finally {
+    pending.cancel();
+  }
+}
+
+async function downloadMedia(params, settings) {
+  const tabId = requireTabId(params);
+  const timeout = boundedTimeout(params.timeoutMs, 120000);
+  return waitForDownload({ tabId, timeoutMs: timeout, action: { method: "browser.click", params: { locator: params.locator, framePath: params.framePath } } }, settings);
+}
+
+async function waitForFileChooser(params, settings) {
+  const tabId = requireTabId(params);
+  await assertTabNotBlocked(tabId, settings);
+  await ensureDebugger(tabId);
+  const action = validateBoundAction(params.action, ["browser.click", "browser.coordinateClick"]);
+  const timeout = boundedTimeout(params.timeoutMs, 30000);
+  await sendCdp(tabId, "Page.setInterceptFileChooserDialog", { enabled: true });
+  const pending = createTabWaiter(fileChooserWaitersByTab, tabId, timeout, "FILE_CHOOSER_TIMEOUT", "file chooser");
+  void pending.promise.catch(() => {});
+  try {
+    const actionResult = await execute(action.method, { ...(action.params || {}), tabId });
+    const chooser = await pending.promise;
+    return { actionResult, chooserId: chooser.id, isMultiple: chooser.mode === "selectMultiple" };
+  } finally {
+    pending.cancel();
+    await sendCdp(tabId, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {});
+  }
+}
+
+async function setFileChooserFiles(tabId, chooserId, files) {
+  const id = requireString(chooserId, "chooserId");
+  if (!Array.isArray(files) || !files.length || files.length > 20 || files.some((file) => typeof file !== "string" || !file)) throw codedError("INVALID_PARAMS", "files must contain 1 to 20 paths");
+  const chooser = fileChoosers.get(id);
+  if (!chooser || chooser.tabId !== tabId) throw codedError("FILE_CHOOSER_NOT_FOUND", "The file chooser is missing, stale, or belongs to another tab");
+  if (chooser.mode !== "selectMultiple" && files.length > 1) throw codedError("FILE_CHOOSER_MULTIPLE_NOT_ALLOWED", "This file chooser accepts only one file");
+  await sendCdp(tabId, "DOM.setFileInputFiles", { backendNodeId: chooser.backendNodeId, files });
+  fileChoosers.delete(id);
+  return { chooserId: id, files: files.map((file) => file.split(/[\\/]/).pop()) };
+}
+
+function validateBoundAction(action, allowedMethods) {
+  if (!action || !allowedMethods.includes(action.method)) throw codedError("INVALID_PARAMS", `action.method must be one of: ${allowedMethods.join(", ")}`);
+  const actionUnknown = Object.keys(action).filter((key) => !["method", "params"].includes(key));
+  if (actionUnknown.length || !action.params || typeof action.params !== "object" || Array.isArray(action.params)) throw codedError("INVALID_PARAMS", "action must contain only method and object params");
+  const allowedParams = action.method === "browser.click" ? ["locator", "framePath", "button", "clickCount"] : ["x", "y", "button", "clickCount"];
+  const unknown = Object.keys(action.params).filter((key) => !allowedParams.includes(key));
+  if (unknown.length) throw codedError("INVALID_PARAMS", `Unknown action parameter: ${unknown[0]}`, { field: unknown[0] });
+  if (action.method === "browser.click" && !action.params.locator) throw codedError("INVALID_PARAMS", "browser.click action requires locator");
+  if (action.method === "browser.coordinateClick" && (!Number.isFinite(action.params.x) || !Number.isFinite(action.params.y))) throw codedError("INVALID_PARAMS", "browser.coordinateClick action requires numeric x and y");
+  return action;
+}
+
+function createTabWaiter(registry, tabId, timeoutMs, code, label) {
+  let resolvePromise;
+  let rejectPromise;
+  const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+  const waiters = registry.get(tabId) || new Set();
+  const resolve = (value) => { cleanup(); resolvePromise(value); };
+  waiters.add(resolve);
+  registry.set(tabId, waiters);
+  const timer = setTimeout(() => { cleanup(); rejectPromise(codedError(code, `Timed out after ${timeoutMs}ms waiting for ${label}`, { timeoutMs })); }, timeoutMs);
+  const cleanup = () => { clearTimeout(timer); waiters.delete(resolve); if (!waiters.size) registry.delete(tabId); };
+  return { promise, cancel: cleanup };
+}
+
+async function waitForChromeDownload(started, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const matches = await chrome.downloads.search({ startedAfter: new Date(started.startedAt - 2000).toISOString(), orderBy: ["-startTime"], limit: 50 });
+    const item = matches.find((entry) => (entry.url === started.url || entry.finalUrl === started.url) && new Date(entry.startTime || 0).getTime() >= started.startedAt - 2000);
+    if (item) {
+      if (item.state === "complete") return sanitizeDownload(item, started);
+      if (item.state === "interrupted") throw codedError("DOWNLOAD_FAILED", `Download was interrupted: ${item.error || "unknown"}`, { id: item.id, error: item.error });
+    }
+    await delay(100);
+  }
+  throw codedError("DOWNLOAD_TIMEOUT", `Timed out after ${timeoutMs}ms waiting for download completion`, { timeoutMs });
+}
+
+function sanitizeDownload(item, started) {
+  return { id: item.id, guid: started.guid, suggestedFilename: started.suggestedFilename, filename: String(item.filename || "").split(/[\\/]/).pop(), path: item.filename, state: item.state, bytesReceived: item.bytesReceived, totalBytes: item.totalBytes, url: item.finalUrl || item.url };
+}
+
+function inspectDownloadTarget(locator) {
+  let candidates;
+  try { candidates = locator.css ? [...document.querySelectorAll(locator.css)] : locator.testId ? [...document.querySelectorAll(`[data-testid="${String(locator.testId).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`)] : [...document.querySelectorAll("a[download]")]; } catch { return { ok: false, code: "INVALID_LOCATOR", message: "Invalid CSS locator" }; }
+  if (locator.text) candidates = candidates.filter((el) => String(el.innerText || el.textContent || "").includes(locator.text));
+  if (candidates.length !== 1) return { ok: false, code: candidates.length ? "LOCATOR_AMBIGUOUS" : "LOCATOR_NOT_FOUND", message: `Locator matched ${candidates.length} download targets` };
+  const element = candidates[0];
+  const raw = element.href;
+  if (!raw) return { ok: false, code: "DOWNLOAD_TARGET_INVALID", message: "Target has no downloadable URL" };
+  const url = new URL(raw, location.href).href;
+  if (element.tagName !== "A" || !element.hasAttribute("download")) return { ok: false, code: "DOWNLOAD_TARGET_INVALID", message: "Media download requires an explicit anchor download target" };
+  return { ok: true, value: { url } };
+}
+
+async function waitForNavigationChange(tabId, before, expectedUrl, match, waitUntil = "load", timeoutMs = 10000) {
+  const started = Date.now();
+  while (Date.now() - started <= timeoutMs) {
+    const current = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+    const changed = current && (current.documentId !== before?.documentId || current.url !== before?.url);
+    if (changed && (!expectedUrl || urlMatches(current.url || "", expectedUrl, match))) {
+      const remaining = Math.max(1, timeoutMs - (Date.now() - started));
+      const loaded = await waitForLoadState(tabId, waitUntil || "load", remaining);
+      return { ...loaded, fromUrl: before?.url, toUrl: current.url };
+    }
+    await delay(50);
+  }
+  throw codedError("NAVIGATION_TIMEOUT", `Timed out after ${timeoutMs}ms waiting for navigation`, { timeoutMs, fromUrl: before?.url, expectedUrl });
+}
+
+function urlMatches(actual, expected, mode) {
+  const selected = mode || (expected.includes("*") ? "glob" : "exact");
+  if (selected === "exact") return actual === expected;
+  if (selected === "contains") return actual.includes(expected);
+  if (selected === "glob") {
+    const pattern = expected.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    return new RegExp(`^${pattern}$`).test(actual);
+  }
+  throw codedError("INVALID_PARAMS", "match must be exact, contains, or glob");
+}
+
+function boundedTimeout(value, fallback) {
+  if (value == null) return fallback;
+  if (!Number.isInteger(value) || value < 1 || value > 120000) throw codedError("INVALID_PARAMS", "timeoutMs must be an integer between 1 and 120000");
+  return value;
+}
+
+function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+async function setFileInput(tabId, selector, files, framePath) {
   if (!Array.isArray(files) || files.length === 0) throw codedError("INVALID_PARAMS", "files must be a non-empty array");
-  const document = await sendCdp(tabId, "DOM.getDocument", { depth: 0, pierce: true });
-  const match = await sendCdp(tabId, "DOM.querySelector", { nodeId: document.root.nodeId, selector });
-  if (!match.nodeId) throw codedError("LOCATOR_NOT_FOUND", `No file input matched ${selector}`);
-  await sendCdp(tabId, "DOM.setFileInputFiles", { nodeId: match.nodeId, files });
-  return { selector, files: files.map((file) => file.split(/[\\/]/).pop()) };
+  const frameContext = await resolveFrameContext(tabId, framePath);
+  let remote;
+  try {
+    remote = await evaluateInContext(tabId, frameContext.contextId, `document.querySelector(${JSON.stringify(selector)})`, false, frameContext.sessionId);
+  } catch (error) {
+    throw codedError("INVALID_LOCATOR", `Invalid file input selector: ${selector}`, { cause: error.code });
+  }
+  if (!remote?.objectId) throw codedError("LOCATOR_NOT_FOUND", `No file input matched ${selector}`);
+  try {
+    await assertFrameContextFresh(tabId, frameContext);
+    await sendCdpInSession(tabId, frameContext.sessionId, "DOM.setFileInputFiles", { objectId: remote.objectId, files });
+  } finally {
+    await sendCdpInSession(tabId, frameContext.sessionId, "Runtime.releaseObject", { objectId: remote.objectId }).catch(() => {});
+  }
+  return { selector, frameId: frameContext.frameId, files: files.map((file) => file.split(/[\\/]/).pop()) };
 }
 
 function getEvents(params) {
@@ -817,6 +1538,45 @@ function getEvents(params) {
   const filtered = events.filter((event) => event.sequence > afterSequence && (!params.tabId || event.source?.tabId === params.tabId) && (!params.methods || params.methods.includes(event.method)));
   const page = filtered.slice(0, limit);
   return { events: page, cursor: page.at(-1)?.sequence || afterSequence, hasMore: filtered.length > page.length, truncated: events.length > 0 && afterSequence < events[0].sequence - 1 };
+}
+
+function recordConsoleLog(tabId, entry) {
+  const logs = consoleLogsByTab.get(tabId) || [];
+  logs.push({ sequence: ++consoleSequence, timestamp: entry.timestamp, level: entry.level, text: String(entry.text || "").slice(0, 10000), url: String(entry.url || "").slice(0, 4096) });
+  if (logs.length > 500) logs.splice(0, logs.length - 500);
+  consoleLogsByTab.set(tabId, logs);
+}
+
+function getConsoleLogs(tabId, params) {
+  const afterSequence = params.afterSequence == null ? 0 : Number(params.afterSequence);
+  if (!Number.isInteger(afterSequence) || afterSequence < 0) throw codedError("INVALID_PARAMS", "afterSequence must be a non-negative integer");
+  const limit = params.limit == null ? 100 : Number(params.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw codedError("INVALID_PARAMS", "limit must be an integer between 1 and 500");
+  const allowedLevels = new Set(["log", "debug", "info", "warning", "error"]);
+  if (params.levels != null && (!Array.isArray(params.levels) || params.levels.some((level) => !allowedLevels.has(level)))) throw codedError("INVALID_PARAMS", "levels contains an unsupported console level");
+  const levels = Array.isArray(params.levels) ? new Set(params.levels) : null;
+  if (params.text != null && (typeof params.text !== "string" || params.text.length > 1000)) throw codedError("INVALID_PARAMS", "text must be a string with at most 1000 characters");
+  const text = String(params.text || "").toLowerCase();
+  const all = consoleLogsByTab.get(tabId) || [];
+  const filtered = all.filter((entry) => entry.sequence > afterSequence && (!levels || levels.has(entry.level)) && (!text || entry.text.toLowerCase().includes(text)));
+  const page = filtered.slice(0, limit);
+  return { logs: page, cursor: page.at(-1)?.sequence || afterSequence, hasMore: filtered.length > page.length, truncated: all.length > 0 && afterSequence < all[0].sequence - 1 };
+}
+
+function normalizeConsoleLevel(value) {
+  const level = String(value || "log").toLowerCase();
+  if (["error", "warning", "info", "debug"].includes(level)) return level;
+  if (level === "warn") return "warning";
+  return "log";
+}
+
+function summarizeConsoleArgs(args) {
+  return (args || []).map((arg) => {
+    if (["string", "number", "boolean", "bigint"].includes(arg?.type)) return String(arg.value ?? arg.unserializableValue ?? "");
+    if (arg?.type === "undefined") return "undefined";
+    if (arg?.subtype === "null") return "null";
+    return String(arg?.description || `[${arg?.subtype || arg?.type || "object"}]`).slice(0, 1000);
+  }).join(" ").slice(0, 10000);
 }
 
 function recordEvent(event) {
@@ -869,7 +1629,7 @@ function domSnapshotExpression(params) {
   })()`;
 }
 
-function resolveLocator(locator) {
+function resolveLocator(locator, scroll = true) {
   const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
   const implicitRole = (el) => el.getAttribute("role") || ({
     A: el.hasAttribute("href") ? "link" : null,
@@ -889,7 +1649,7 @@ function resolveLocator(locator) {
   if (locator.name) candidates = candidates.filter((el) => accessibleName(el) === normalize(locator.name) || (!locator.exact && accessibleName(el).includes(normalize(locator.name))));
   candidates = candidates.filter((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; });
   if (candidates.length !== 1) return candidates.length === 0 ? null : { ambiguous: true, count: candidates.length };
-  const el = candidates[0]; el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+  const el = candidates[0]; if (scroll) el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2, tag: el.localName, role: implicitRole(el), name: accessibleName(el) };
 }
@@ -912,7 +1672,7 @@ function keyDefinition(key) {
 }
 
 function capabilityList() {
-  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
+  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
 }
 
 function requireTabId(params) {
@@ -923,6 +1683,11 @@ function requireTabId(params) {
 
 function requireString(value, name) {
   if (typeof value !== "string" || !value.trim()) throw codedError("INVALID_PARAMS", `${name} must be a non-empty string`);
+  return value;
+}
+
+function requireBoolean(value, name) {
+  if (typeof value !== "boolean") throw codedError("INVALID_PARAMS", `${name} must be a boolean`);
   return value;
 }
 

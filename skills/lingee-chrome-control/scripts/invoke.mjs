@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { STANDARD_BRIDGE_METHODS } from "./runtime/standard-capabilities.mjs";
 
-const usage = "node invoke.mjs instances | node invoke.mjs call <method> [jsonParams] [--timeout-ms <ms>]";
+const usage = "node invoke.mjs instances | node invoke.mjs call <method> [jsonParams] [--timeout-ms <ms>]; set UNIVERSAL_BROWSER_SESSION_ID for a stable CLI control session";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledClientUrl = new URL("./runtime/bridge-client.mjs", import.meta.url);
 export async function locateBridgeRoot(options = {}) {
@@ -101,6 +101,7 @@ export async function runInvocation(invocation, dependencies = {}) {
     }
     const client = await connectBridge({
       instanceId,
+      ...(env.UNIVERSAL_BROWSER_SESSION_ID ? { sessionId: env.UNIVERSAL_BROWSER_SESSION_ID } : {}),
       ...(invocation.timeoutMs === undefined ? {} : { timeoutMs: invocation.timeoutMs })
     });
     return await client.call(

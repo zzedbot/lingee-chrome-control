@@ -10,6 +10,7 @@ const toolByName = new Map(TOOLS.map((tool) => [tool.name, tool]));
 let client;
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+input.on("close", () => { void client?.call("browser.endSession", {}).catch(() => {}); });
 input.on("line", async (line) => {
   if (!line.trim()) return;
   let request;

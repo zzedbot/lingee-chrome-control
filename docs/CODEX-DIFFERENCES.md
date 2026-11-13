@@ -40,6 +40,12 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Read page text | Implemented | Bounded result size |
 | DOM snapshot | Implemented with differences | Compact clean-room format, not Codex's private snapshot schema |
 | Typed locator queries | Implemented | Count, bounded all-text, strict inner/text content and attribute reads, visibility and enabled state; no arbitrary locator evaluation |
+| Nested frame locators | Implemented | Ordered semantic frame paths, loader freshness checks and independent frame-origin policy; different private protocol |
+| Element and navigation waits | Implemented | Bounded element states, URL/load states and action-bound navigation including SPA/full navigation |
+| Form control operations | Implemented | Checked-state verification, native select options, double click, and sequential input |
+| Session/tab lifecycle | Implemented with differences | Explicit non-secret session IDs, renewable exclusive leases, temporary tabs and handoff/deliverable markers |
+| Download and file chooser lifecycle | Implemented | Wait-before-action ordering, completed downloads, restricted media target, captured chooser and validated files |
+| Structured console logs | Implemented | Bounded primitive summaries, filtering/cursor and policy-sanitized source URLs; no remote object handles |
 | Accessibility snapshot | Implemented | Uses CDP Accessibility domain |
 | Playwright-style selectors | Partially equivalent | CSS, role/name, label, text, test ID; not the full Codex subset or upstream Playwright |
 | Click, fill, keypress, scroll | Implemented | CDP Input-backed |

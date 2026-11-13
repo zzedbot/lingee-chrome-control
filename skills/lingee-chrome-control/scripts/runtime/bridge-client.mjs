@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 import { runtimeDirectory } from "./runtime-paths.mjs";
@@ -99,18 +100,19 @@ async function discoverBridgeDescriptors({
   };
 }
 
-export async function connectBridge({ instanceId, timeoutMs = 3000, cleanupStale = true } = {}) {
+export async function connectBridge({ instanceId, timeoutMs = 3000, cleanupStale = true, sessionId } = {}) {
   const { instances } = await discoverBridgeDescriptors({ cleanupStale });
   const descriptor = instanceId ? instances.find((item) => item.instanceId === instanceId) : instances[0];
   if (!descriptor) throw Object.assign(new Error("No running Lingee Chrome Agent Bridge instance was found. Open Chrome and enable the extension."), { code: "BRIDGE_NOT_FOUND" });
-  return new BridgeClient(descriptor, timeoutMs);
+  return new BridgeClient(descriptor, timeoutMs, sessionId);
 }
 
 export class BridgeClient {
-  constructor(descriptor, timeoutMs = 30000) {
+  constructor(descriptor, timeoutMs = 30000, sessionId = process.env.UNIVERSAL_BROWSER_SESSION_ID || crypto.randomUUID()) {
     this.descriptor = descriptor;
     this.timeoutMs = timeoutMs;
     this.nextId = 1;
+    this.sessionId = sessionId;
   }
 
   call(method, params = {}, { timeoutMs = this.timeoutMs } = {}) {
@@ -120,7 +122,7 @@ export class BridgeClient {
       let buffer = "";
       const timer = setTimeout(() => socket.destroy(Object.assign(new Error(`${method} timed out`), { code: "BRIDGE_TIMEOUT" })), timeoutMs);
       socket.setEncoding("utf8");
-      socket.on("connect", () => socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params, auth: this.descriptor.token })}\n`));
+      socket.on("connect", () => socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params, auth: this.descriptor.token, sessionId: this.sessionId })}\n`));
       socket.on("data", (chunk) => {
         buffer += chunk;
         const newline = buffer.indexOf("\n");

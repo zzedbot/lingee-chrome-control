@@ -150,12 +150,14 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /case "browser\.wheel"[\s\S]*requireVirtualCursor[\s\S]*"wheel"[\s\S]*sendPointerCdp/);
   assert.match(background, /case "browser\.scroll"[\s\S]*requireVirtualCursor[\s\S]*"wheel"[\s\S]*evaluateAttachedValue/);
   assert.match(background, /async function clickCoordinates[\s\S]*"pressed"[\s\S]*CURSOR_PRESS_HOLD_MS[\s\S]*"mouseReleased"[\s\S]*"click"[\s\S]*CLICK_FEEDBACK_MS/);
+  assert.match(background, /mousePressed[\s\S]*buttons: mouseButtonMask\(button\)[\s\S]*mouseReleased[\s\S]*buttons: 0/, "click input includes the real mouse button-state transition");
   assert.match(background, /async function drag[\s\S]*requireVirtualCursor[\s\S]*drag: true[\s\S]*dragEnd: true/);
   assert.match(background, /const cursorPositionsByTab = new Map\(\)/);
   assert.match(background, /const tabOperationQueue = createTabOperationQueue\(\)/);
   assert.match(background, /function cursorMotionDuration[\s\S]*CURSOR_MIN_MOTION_MS[\s\S]*CURSOR_MAX_MOTION_MS/);
   assert.match(background, /async function moveVirtualCursor[\s\S]*requireVirtualCursor[\s\S]*CURSOR_SETTLE_MS[\s\S]*sendPointerCdp/);
   assert.match(background, /async function requireVirtualCursor[\s\S]*CURSOR_RENDER_FAILED[\s\S]*CURSOR_DOCUMENT_CHANGED[\s\S]*CURSOR_POSITION_MISMATCH/);
+  assert.match(background, /async function showVirtualCursor[\s\S]*boundedBrowserCall[\s\S]*CURSOR_RENDER_TIMEOUT/, "virtual cursor injection is bounded so a tab queue cannot be held indefinitely");
   assert.match(background, /const effectiveX = x == null && previous \? previous\.x : x/);
   assert.match(background, /async function ensureDebugger[\s\S]*null, null, "ensure"/);
   assert.match(background, /function refreshForeignFrameMonitor[\s\S]*null, null, "ensure"/);
@@ -170,6 +172,12 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /port\.onMessage\.addListener\(\(message\) => \{ void onNativeMessage\(message, port\); \}\)/, "native messages remain concurrent while a page dialog blocks the initiating click");
   assert.match(background, /dialogHandling: "codex-lifecycle-v3"/);
   assert.match(background, /locatorQueries: "codex-read-v1"/);
+  assert.match(background, /resolveFrameContext[\s\S]*this\.scrollIntoView\(\{block:'center',inline:'center',behavior:'instant'\}\)[\s\S]*getBoundingClientRect/, "frame elements are scrolled into the top-level viewport before pointer coordinates are composed");
+  assert.match(background, /resolveFrameContext\(tabId, framePath, false\)[\s\S]*resolveLocator\.toString\(\)[\s\S]*false/, "frame offsets are measured again without scrolling after the target scroll changes ancestor geometry");
+  assert.match(background, /DOM\.describeNode[\s\S]*Page\.getFrameTree[\s\S]*flattenFrameTree\(latestFrameTree\)\.get\(childFrameId\)/, "each resolved frame element is checked against a fresh frame tree for cross-process navigation");
+  assert.match(background, /Target\.attachedToTarget[\s\S]*registerOopifSession[\s\S]*Target\.setAutoAttach[\s\S]*flatten: true/, "out-of-process frames use Chrome debugger flat auto-attach sessions");
+  assert.doesNotMatch(background, /Target\.attachToTarget/, "Chrome extension frame control does not use unsupported direct child-target attachment");
+  assert.match(background, /async function detachDebugger[\s\S]*boundedCleanup[\s\S]*Target\.setAutoAttach[\s\S]*autoAttach: false[\s\S]*debuggerController\.detach/, "detaching disables OOPIF auto-attach with a bounded wait before releasing the root debugger session");
   assert.match(background, /Page\.javascriptDialogOpening[\s\S]*jsDialogsByTab\.set[\s\S]*dialogOpenWaitersByTab/);
   assert.match(background, /Page\.javascriptDialogClosed[\s\S]*jsDialogsByTab\.delete[\s\S]*dialogCloseWaitersByTab/);
   assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*Promise\.race[\s\S]*dialogOpened: true/);

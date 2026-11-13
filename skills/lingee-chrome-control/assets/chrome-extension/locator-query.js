@@ -95,6 +95,17 @@ export function runLocatorQuery(locator, operation, options = {}) {
     candidates = candidates.filter((el) => matchesText(accessibleName(el), expected));
   }
 
+  if (operation === "state") {
+    return {
+      ok: true,
+      value: {
+        count: candidates.length,
+        visibleCount: candidates.filter(isVisible).length,
+        enabledCount: candidates.filter(isEnabled).length
+      }
+    };
+  }
+
   if (operation === "count") return { ok: true, value: candidates.length };
   if (operation === "allTextContents") {
     const maxResults = Math.max(1, Math.min(Number(options.maxResults) || 100, 500));

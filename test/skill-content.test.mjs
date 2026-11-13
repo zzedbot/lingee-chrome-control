@@ -116,21 +116,37 @@ test("skill package contains required cross-tool files", async () => {
     "SKILL.md",
     "agents/openai.yaml",
     "references/tools.md",
+    "references/capabilities.md",
+    "references/examples.md",
     "references/security.md",
     "references/troubleshooting.md",
     "scripts/invoke.mjs",
     "scripts/doctor.mjs",
+    "scripts/preflight.mjs",
+    "scripts/install-host.mjs",
+    "scripts/uninstall-host.mjs",
     "scripts/runtime/bridge-client.mjs",
     "scripts/runtime/runtime-paths.mjs",
     "scripts/runtime/standard-capabilities.mjs",
-    "assets/chrome-extension/manifest.json"
+    "assets/chrome-extension/manifest.json",
+    "assets/native-host/universal-browser-host.exe"
   ]) assert.equal(await exists(join(skillRoot, path)), true, path);
+});
+
+test("skill bundles the current Windows Native Host executable", async () => {
+  assert.deepEqual(
+    await readFile(join(skillRoot, "assets", "native-host", "universal-browser-host.exe")),
+    await readFile(join(repoRoot, "dist", "universal-browser-host.exe")),
+    "Native Host stays synchronized in the Skill package"
+  );
 });
 
 test("skill bundles an exact installable copy of the Chrome extension", async () => {
   const extensionFiles = [
     "background.js",
     "locator-query.js",
+    "frame-locator.js",
+    "form-controls.js",
     "debugger-controller.js",
     "foreign-frame-monitor.js",
     "manifest.json",
@@ -221,8 +237,13 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
     "references/tools.md",
     "references/security.md",
     "references/troubleshooting.md",
+    "references/capabilities.md",
+    "references/examples.md",
     "scripts/invoke.mjs",
-    "scripts/doctor.mjs"
+    "scripts/doctor.mjs",
+    "scripts/preflight.mjs",
+    "scripts/install-host.mjs",
+    "scripts/uninstall-host.mjs"
   ]) assert.match(skill, new RegExp(resource.replaceAll(".", "\\.")));
 
   assert.doesNotMatch(skill, /scripts\/diagnose\.mjs/);
@@ -394,7 +415,9 @@ test("all documented CLI invocations use an absolute loaded Skill root", async (
   const paths = [
     "SKILL.md",
     "references/tools.md",
-    "references/troubleshooting.md"
+    "references/troubleshooting.md",
+    "references/capabilities.md",
+    "references/examples.md"
   ];
   const documents = await Promise.all(paths.map(async (path) => ({
     path,
@@ -430,6 +453,8 @@ test("public skill does not depend on Codex-private browser runtime identifiers"
   const paths = [
     "SKILL.md",
     "references/tools.md",
+    "references/capabilities.md",
+    "references/examples.md",
     "references/security.md",
     "references/troubleshooting.md"
   ];

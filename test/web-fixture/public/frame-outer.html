@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>Outer Frame</title></head>
+<body>
+  <button data-testid="frame-button" onclick="parent.postMessage('lingee-frame-target','*')">Frame target</button>
+  <label>Frame input <input data-testid="frame-input" oninput="top.postMessage('lingee-frame-input:'+this.value,'*')"></label>
+  <input type="file" data-testid="frame-file" onchange="top.postMessage('lingee-frame-file:'+(this.files[0]?.name||'none'),'*')">
+  <button data-testid="frame-navigate" onclick="location.href='/frame-alt.html'">Navigate frame</button>
+  <iframe data-testid="inner-frame" title="Nested frame" src="/frame-inner.html"></iframe>
+  <button data-testid="frame-coordinate-target" style="position:fixed;left:180px;top:40px;z-index:2147483647" onclick="parent.postMessage('lingee-frame-coordinate','*')">Coordinate target</button>
+</body></html>
