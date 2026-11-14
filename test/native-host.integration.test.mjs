@@ -125,6 +125,50 @@ test("native host shares reads but blocks another session from mutating an owned
   assert.equal((await readPromise).id, 9);
 });
 
+test("native host owns and cleans a child tab reported by a completed click", async (t) => {
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-created-tab-test-"));
+  const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
+    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+  });
+  t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
+  child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
+  const descriptorPath = await waitForDescriptor(path.join(taskDir, "runtime"));
+  const descriptor = JSON.parse(await fs.readFile(descriptorPath, "utf8"));
+  const owner = new BridgeClient(descriptor, 3000, "session-created-tab");
+  const messages = createNativeMessageQueue(child.stdout);
+
+  const claimPromise = owner.call("browser.claimTab", { tabId: 9 });
+  const claimGetTab = await messages.next();
+  child.stdin.write(encodeNativeMessage({ type: "response", id: claimGetTab.id, result: { id: 9, url: "http://127.0.0.1/test" } }));
+  const claim = await messages.next();
+  child.stdin.write(encodeNativeMessage({ type: "response", id: claim.id, result: { id: 9, url: "http://127.0.0.1/test" } }));
+  await claimPromise;
+
+  const clickPromise = owner.call("browser.click", { tabId: 9, locator: { text: "New tab" } });
+  const clickGetTab = await messages.next();
+  child.stdin.write(encodeNativeMessage({ type: "response", id: clickGetTab.id, result: { id: 9, url: "http://127.0.0.1/test" } }));
+  const click = await messages.next();
+  child.stdin.write(encodeNativeMessage({ type: "response", id: click.id, result: { newTabOpened: true, createdTabIds: [10] } }));
+  const consume = await messages.next();
+  assert.equal(consume.method, "_bridge.consumeCreatedTabs");
+  child.stdin.write(encodeNativeMessage({ type: "response", id: consume.id, result: { tabIds: [] } }));
+  assert.deepEqual(await clickPromise, { newTabOpened: true, createdTabIds: [10] });
+  assert.equal((await owner.call("browser.getLease", { tabId: 10 })).temporary, true);
+
+  const endPromise = owner.call("browser.endSession", {});
+  const inspect = await messages.next();
+  assert.equal(inspect.method, "_bridge.inspectUnsavedWork");
+  child.stdin.write(encodeNativeMessage({ type: "response", id: inspect.id, result: { unsaved: false } }));
+  const close = await messages.next();
+  assert.equal(close.method, "browser.closeTab");
+  child.stdin.write(encodeNativeMessage({ type: "response", id: close.id, result: { closed: true } }));
+  const ended = await endPromise;
+  assert.deepEqual(ended.closed, [10]);
+  assert.equal(ended.preserved.length, 1);
+  assert.equal(ended.preserved[0].tabId, 9);
+  assert.equal(ended.preserved[0].reason, "user-tab");
+});
+
 async function waitForDescriptor(directory, timeoutMs = 3000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {

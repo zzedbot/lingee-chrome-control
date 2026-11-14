@@ -1,7 +1,7 @@
 # Lingee Chrome Control 能力补齐 TODO
 
 更新日期：2026-11-11
-当前基线：0.1.26 / `overlay-v13` / `codex-read-v1` / `isolated-world-v1` / `navigation-v1` / `codex-lifecycle-v1`
+当前基线：0.1.27 / `overlay-v13` / `codex-read-v1` / `isolated-world-v1` / `navigation-v1` / `codex-lifecycle-v1`
 参照对象：本机 Codex Browser Use 公开运行接口与仓库 `docs/CODEX-DIFFERENCES.md`
 
 ## 执行规则
@@ -167,9 +167,9 @@
 ### 17. 最终 Browser Use 差距复核与发布
 
 - [ ] 逐项更新 `docs/CODEX-DIFFERENCES.md`，区分对齐、部分对齐和有意不实现。
-- [ ] 执行完整单元、集成、真实 Chrome、iframe、下载、文件上传、多会话和慢速视觉回归。
-- [ ] 审计 Skill 标准面，确认 raw CDP、页面脚本和未知方法仍被阻断。
-- [ ] 审计包内扩展、Host、MCP、CLI、Skill 和版本号一致性。
+- [x] 执行完整单元、集成、真实 Chrome、iframe、下载、文件上传、多会话和慢速视觉回归。
+- [x] 审计 Skill 标准面，确认 raw CDP、页面脚本和未知方法仍被阻断。
+- [x] 审计包内扩展、Host、MCP、CLI、Skill 和版本号一致性。
 - [ ] 生成最终 Skill ZIP、独立扩展包、校验和与交接记录。
 - 验收：核心企业网页任务在不使用 raw CDP 和页面脚本的前提下达到 Browser Use 同类能力。
 
@@ -179,5 +179,6 @@
 - [x] 0.1.24：第一批类型化 Locator 查询代码、契约、单元测试和真实 Chrome E2E 用例已就绪。
 - [x] 0.1.25：Frame、元素状态等待、URL/加载状态/导航同步代码、契约和真实 Chrome E2E 用例已就绪。
 - [x] 0.1.26：表单控件、会话租约、临时页生命周期、下载、File Chooser 和结构化控制台日志代码与测试已就绪。
+- [x] 0.1.27：虚拟鼠标恢复、全部指针确认及通用调试命令均有明确超时上限，新标签点击不再无限占用操作队列。
 - [x] 01. 统一标准能力注册表。
-- [ ] 第 02～11 项待最后统一重新加载扩展并通过真实 Chrome E2E 后最终完成；之后进入第 12 项。
+- [x] 第 02～11 项已通过 0.1.27 自动化、真实 Chrome E2E、独立 KDesign 专项和清理验收；下一步进入第 12 项。

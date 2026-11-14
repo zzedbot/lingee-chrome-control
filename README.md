@@ -153,7 +153,7 @@ npm.cmd run test:chrome:foreign-frame
 
 ### Full web and KDesign fixture
 
-`test/web-fixture` 是一个确定性的 React 17 测试站，使用已审计的 `@kdcloudjs/kdesign` 1.8.74，包含全部可见 Bridge 操作目标、KDesign 组件矩阵，以及 KDesign Pro 风格的登录、工作台、列表、表单、详情流程和报表页面。
+`test/web-fixture` 是一个确定性的 React 17 测试站，使用已审计的 `@kdcloudjs/kdesign` 1.8.74，包含全部可见 Bridge 操作目标、官方仓库中 62 个带示例的 KDesign 组件独立路由，以及 KDesign Pro 官方源码树中的 22 个工作台、列表、表单、详情、报表、异常和登录页面适配。
 
 构建测试站并验证每个标准能力都有对应测试用例：
 

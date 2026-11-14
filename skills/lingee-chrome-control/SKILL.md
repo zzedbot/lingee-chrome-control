@@ -1,6 +1,6 @@
 ---
 name: lingee-chrome-control
-description: Use when requests name Chrome or Lingee Chrome Agent Bridge, or require installing, diagnosing, inspecting, or operating existing Chrome tabs exclusively through this project's standard high-level MCP or Node CLI surface.
+description: Use when requests name Chrome or Lingee Chrome Agent Bridge, or require installing, diagnosing, inspecting, or operating existing Chrome tabs exclusively through this project's standard high-level MCP or Node CLI surface; includes tested KDesign and KDesign Pro browser-operation recipes.
 ---
 
 # Lingee Chrome Control
@@ -63,6 +63,8 @@ Explicit Chrome intent wins. Otherwise, use a connector/API when it avoids brows
 - Load [references/capabilities.md](references/capabilities.md) to choose the correct supported capability family and understand lifecycle behavior.
 - Load [references/tools.md](references/tools.md) for the authoritative MCP/CLI mapping and exact arguments.
 - Load [references/examples.md](references/examples.md) for complete, copyable workflows covering locators, Frames, waits, forms, downloads, file chooser, dialogs, sessions, logs, pointer input, and cleanup.
+- Load [references/kdesign.md](references/kdesign.md) when operating KDesign components or KDesign Pro pages. It explains the tested component-specific locator/action patterns without adding framework-specific Bridge RPC methods.
+- Use [scripts/run-workflow.mjs](scripts/run-workflow.mjs) with the templates under [examples](examples) when a repeated KDesign or KDesign Pro sequence benefits from validation and deterministic execution. The runner accepts only this Skill's standard method allowlist.
 - The extension supports internal debugger-backed implementation, including isolated Frame contexts, but the Skill never exposes raw CDP or page-script escape hatches.
 
 ## Approval and recovery gates

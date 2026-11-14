@@ -183,7 +183,12 @@ try {
   await expectText(/全能力实验室/);
 
   const existingTabIds = new Set((await bridge.call("browser.listTabs", {})).map(({ id }) => id));
-  await checked("browser.click-new-tab-link", () => bridge.call("browser.click", { tabId, locator: { testId: "new-tab-link" } }));
+  const newTabClientTimeoutMs = Number(process.env.LINGEE_NEW_TAB_CLIENT_TIMEOUT_MS) || undefined;
+  const newTabClickStartedAt = Date.now();
+  const newTabClick = await checked("browser.click-new-tab-link", () => bridge.call("browser.click", { tabId, locator: { testId: "new-tab-link" } }, newTabClientTimeoutMs ? { timeoutMs: newTabClientTimeoutMs } : undefined));
+  const newTabClickDiagnostic = { name: "browser.click-new-tab-duration", elapsedMs: Date.now() - newTabClickStartedAt, result: newTabClick };
+  checks.push(newTabClickDiagnostic);
+  if (process.env.LINGEE_E2E_DEBUG === "1") process.stderr.write(`new-tab-diagnostic ${JSON.stringify(newTabClickDiagnostic)}\n`);
   const clickedChild = await waitForNewTab(existingTabIds, `${baseUrl}/?child=1#/target`);
   childTabId = clickedChild.id;
   const childText = await bridge.call("browser.readText", { tabId: childTabId, maxChars: 3000 });
@@ -209,24 +214,28 @@ try {
   await checked("browser.markDeliverable", () => bridge.call("browser.markDeliverable", { tabId: childTabId }));
   await checked("browser.groupTabs", () => bridge.call("browser.groupTabs", { tabIds: [tabId, childTabId], title: "Lingee Web Fixture", color: "blue", collapsed: false }));
   await checked("browser.activateTab-kdesign", () => bridge.call("browser.activateTab", { tabId: childTabId }));
-  await checked("browser.waitFor-kdesign-ready", () => bridge.call("browser.waitFor", { tabId: childTabId, locator: { testId: "open-modal" }, state: "visible", timeoutMs: 10000 }));
-  const kdesignText = await checked("browser.readText-kdesign", () => bridge.call("browser.readText", { tabId: childTabId, maxChars: 20000 }));
-  assert.match(kdesignText.text, /KDesign 组件矩阵/);
+  await checked("browser.waitForLoadState-kdesign", () => bridge.call("browser.waitForLoadState", { tabId: childTabId, state: "load", timeoutMs: 10000 }));
+  const kdesignText = await checked("browser.readText-kdesign", () => waitForPageText(childTabId, /KDesign 官方组件目录/, 10000));
+  assert.match(kdesignText.text, /KDesign 官方组件目录/);
+  await checked("browser.navigate-kdesign-modal", () => bridge.call("browser.navigate", { tabId: childTabId, url: `${baseUrl}/#/kdesign/modal` }));
+  await checked("browser.waitForURL-kdesign-modal", () => bridge.call("browser.waitForURL", { tabId: childTabId, url: `${baseUrl}/#/kdesign/modal`, match: "exact", timeoutMs: 5000 }));
   await checked("browser.click-kdesign-modal", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "open-modal" } }));
-  await checked("browser.waitFor-kdesign-modal", () => bridge.call("browser.waitFor", { tabId: childTabId, locator: { testId: "modal-content" }, state: "visible", timeoutMs: 5000 }));
+  await checked("browser.waitFor-kdesign-modal", () => waitForVisible(childTabId, { testId: "modal-content" }, 5000));
   await checked("browser.reload-kdesign", () => bridge.call("browser.reload", { tabId: childTabId }));
   await waitForComplete(childTabId);
+  await checked("browser.navigate-kdesign-drawer", () => bridge.call("browser.navigate", { tabId: childTabId, url: `${baseUrl}/#/kdesign/drawer` }));
+  await checked("browser.waitForURL-kdesign-drawer", () => bridge.call("browser.waitForURL", { tabId: childTabId, url: `${baseUrl}/#/kdesign/drawer`, match: "exact", timeoutMs: 5000 }));
   await checked("browser.click-kdesign-drawer", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "open-drawer" } }));
-  await checked("browser.waitFor-kdesign-drawer", () => bridge.call("browser.waitFor", { tabId: childTabId, locator: { testId: "drawer-content" }, state: "visible", timeoutMs: 5000 }));
-  await checked("browser.navigate-kdesign-pro", () => bridge.call("browser.navigate", { tabId: childTabId, url: `${baseUrl}/#/pro` }));
-  await checked("browser.waitForURL-kdesign-pro", () => bridge.call("browser.waitForURL", { tabId: childTabId, url: `${baseUrl}/#/pro`, match: "exact", timeoutMs: 5000 }));
+  await checked("browser.waitFor-kdesign-drawer", () => waitForVisible(childTabId, { testId: "drawer-content" }, 5000));
+  await checked("browser.navigate-kdesign-pro", () => bridge.call("browser.navigate", { tabId: childTabId, url: `${baseUrl}/#/pro/workbench` }));
+  await checked("browser.waitForURL-kdesign-pro", () => bridge.call("browser.waitForURL", { tabId: childTabId, url: `${baseUrl}/#/pro/workbench`, match: "exact", timeoutMs: 5000 }));
   await checked("browser.click-pro-form", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-form" } }));
   await checked("browser.click-pro-form-submit", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-form-submit" } }));
   assert.match(await bridge.call("browser.locatorTextContent", { tabId: childTabId, locator: { testId: "pro-form-result" } }), /申请已提交/);
   await checked("browser.click-pro-detail", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-detail" } }));
-  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /采购申请详情/);
+  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /基础详情/);
   await checked("browser.click-pro-report", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-report" } }));
-  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /经营统计报表/);
+  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /列表报表/);
   await checked("browser.click-pro-login", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-login" } }));
   await checked("browser.fill-pro-login-user", () => bridge.call("browser.fill", { tabId: childTabId, locator: { testId: "pro-login-user" }, value: "lingee-test-user" }));
   await checked("browser.fill-pro-login-password", () => bridge.call("browser.fill", { tabId: childTabId, locator: { testId: "pro-login-password" }, value: "fixture-only-value" }));
@@ -344,6 +353,8 @@ async function waitForNewTab(existingTabIds, expectedUrl, timeoutMs = 10000) {
   throw new Error(`New tab did not open at ${expectedUrl}`);
 }
 async function waitForComplete(id, timeoutMs = 10000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const tab = await bridge.call("browser.getTab", { tabId: id }); if (tab.status === "complete") return; await delay(50); } throw new Error(`Tab ${id} did not load`); }
+async function waitForPageText(id, pattern, timeoutMs = 10000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.readText", { tabId: id, maxChars: 30000 }); if (pattern.test(result.text)) return result; await delay(100); } throw new Error(`Page text did not match ${pattern}`); }
+async function waitForVisible(id, locator, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { if (await bridge.call("browser.locatorIsVisible", { tabId: id, locator }, { timeoutMs: 5000 })) return true; await delay(80); } throw new Error(`Locator did not become visible: ${JSON.stringify(locator)}`); }
 async function expectText(pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.readText", { tabId, maxChars: 20000 }); if (pattern.test(result.text)) return result; await delay(80); } throw new Error(`Text did not match ${pattern}`); }
 async function expectLocatorText(locator, pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.locatorTextContent", { tabId, locator, maxChars: 10000 }); if (pattern.test(String(result ?? ""))) return result; await delay(80); } throw new Error(`Locator text did not match ${pattern}`); }
 async function expectCode(code, action) { try { await action(); } catch (error) { assert.equal(error.code, code); return { code }; } throw new Error(`Expected ${code}`); }

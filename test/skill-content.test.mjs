@@ -118,9 +118,11 @@ test("skill package contains required cross-tool files", async () => {
     "references/tools.md",
     "references/capabilities.md",
     "references/examples.md",
+    "references/kdesign.md",
     "references/security.md",
     "references/troubleshooting.md",
     "scripts/invoke.mjs",
+    "scripts/run-workflow.mjs",
     "scripts/doctor.mjs",
     "scripts/preflight.mjs",
     "scripts/install-host.mjs",
@@ -128,6 +130,8 @@ test("skill package contains required cross-tool files", async () => {
     "scripts/runtime/bridge-client.mjs",
     "scripts/runtime/runtime-paths.mjs",
     "scripts/runtime/standard-capabilities.mjs",
+    "examples/kdesign-components.json",
+    "examples/kdesign-pro-pages.json",
     "assets/chrome-extension/manifest.json",
     "assets/native-host/universal-browser-host.exe"
   ]) assert.equal(await exists(join(skillRoot, path)), true, path);
@@ -239,7 +243,9 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
     "references/troubleshooting.md",
     "references/capabilities.md",
     "references/examples.md",
+    "references/kdesign.md",
     "scripts/invoke.mjs",
+    "scripts/run-workflow.mjs",
     "scripts/doctor.mjs",
     "scripts/preflight.mjs",
     "scripts/install-host.mjs",
@@ -417,7 +423,8 @@ test("all documented CLI invocations use an absolute loaded Skill root", async (
     "references/tools.md",
     "references/troubleshooting.md",
     "references/capabilities.md",
-    "references/examples.md"
+    "references/examples.md",
+    "references/kdesign.md"
   ];
   const documents = await Promise.all(paths.map(async (path) => ({
     path,
@@ -455,6 +462,7 @@ test("public skill does not depend on Codex-private browser runtime identifiers"
     "references/tools.md",
     "references/capabilities.md",
     "references/examples.md",
+    "references/kdesign.md",
     "references/security.md",
     "references/troubleshooting.md"
   ];

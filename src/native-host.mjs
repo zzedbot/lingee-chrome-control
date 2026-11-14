@@ -213,6 +213,7 @@ async function dispatch(method, params, sessionId) {
   }
   if (method === "browser.claimTab") sessionManager.acquire(params.tabId, sessionId, { temporary: false });
   if (method === "browser.openTab" && result?.id != null) sessionManager.acquire(result.id, sessionId, { temporary: true });
+  for (const tabId of result?.createdTabIds || []) sessionManager.acquire(tabId, sessionId, { temporary: true });
   if (TAB_CREATING_METHODS.has(method)) {
     const created = await sendToExtension("_bridge.consumeCreatedTabs", { tabId: params.tabId, since: actionStartedAt, settleMs: 250 }).catch(() => ({ tabIds: [] }));
     for (const tabId of created?.tabIds || []) sessionManager.acquire(tabId, sessionId, { temporary: true });

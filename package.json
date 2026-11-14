@@ -1,6 +1,6 @@
 {
   "name": "lingee-chrome-agent-bridge",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Clean-room Chrome control bridge for MCP and JSON-RPC agents.",
   "type": "module",
   "license": "MIT",
@@ -13,9 +13,10 @@
     "test": "node --test \"test/*.test.mjs\"",
     "test:web:build": "npm --prefix test/web-fixture run build",
     "test:web:chrome": "npm --prefix test/web-fixture run build && node scripts/web-fixture-e2e.mjs",
+    "test:chrome:kdesign": "npm --prefix test/web-fixture run build && node scripts/kdesign-e2e.mjs",
     "test:chrome": "node scripts/chrome-e2e.mjs",
     "test:chrome:foreign-frame": "node scripts/chrome-e2e.mjs --require-foreign-frame",
-    "check": "node --check src/native-host.mjs && node --check src/session-manager.mjs && node --check src/bridge-client.mjs && node --check src/mcp-server.mjs && node --check skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs && node --check skills/lingee-chrome-control/scripts/invoke.mjs && node --check skills/lingee-chrome-control/scripts/doctor.mjs && node --check skills/lingee-chrome-control/scripts/preflight.mjs && node --check skills/lingee-chrome-control/scripts/install-host.mjs && node --check skills/lingee-chrome-control/scripts/uninstall-host.mjs && node --check extension/background.js && node --check extension/form-controls.js && node --check extension/locator-query.js && node --check extension/frame-locator.js && node --check extension/debugger-controller.js && node --check extension/foreign-frame-monitor.js && node --check extension/virtual-cursor.js && node --check extension/tab-operation-queue.js && node --check scripts/chrome-e2e.mjs && node --check scripts/web-fixture-e2e.mjs && node --check extension/monitor-injection.js && node --check scripts/chrome-e2e-preflight.mjs && node --check scripts/install-host.mjs",
+    "check": "node --check src/native-host.mjs && node --check src/session-manager.mjs && node --check src/bridge-client.mjs && node --check src/mcp-server.mjs && node --check skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs && node --check skills/lingee-chrome-control/scripts/invoke.mjs && node --check skills/lingee-chrome-control/scripts/doctor.mjs && node --check skills/lingee-chrome-control/scripts/preflight.mjs && node --check skills/lingee-chrome-control/scripts/install-host.mjs && node --check skills/lingee-chrome-control/scripts/uninstall-host.mjs && node --check extension/background.js && node --check extension/form-controls.js && node --check extension/locator-query.js && node --check extension/frame-locator.js && node --check extension/debugger-controller.js && node --check extension/foreign-frame-monitor.js && node --check extension/virtual-cursor.js && node --check extension/tab-operation-queue.js && node --check scripts/chrome-e2e.mjs && node --check scripts/web-fixture-e2e.mjs && node --check scripts/kdesign-e2e.mjs && node --check extension/monitor-injection.js && node --check scripts/chrome-e2e-preflight.mjs && node --check scripts/install-host.mjs",
     "build:host": "node scripts/build-native-host.mjs",
     "install:host": "node scripts/install-host.mjs",
     "uninstall:host": "node scripts/uninstall-host.mjs"

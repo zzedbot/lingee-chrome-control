@@ -149,3 +149,18 @@ node "<skill-root>/scripts/invoke.mjs" call browser.endSession '{}'
 ```
 
 Use `browser.markHandoff` instead when a later session should continue the tab. Always inspect the returned closed and preserved tab results.
+
+## Validated KDesign workflow templates
+
+The Skill bundles reusable, editable examples:
+
+```powershell
+node "<skill-root>/scripts/run-workflow.mjs" list "<skill-root>/examples/kdesign-components.json"
+node "<skill-root>/scripts/run-workflow.mjs" validate "<skill-root>/examples/kdesign-components.json"
+node "<skill-root>/scripts/run-workflow.mjs" run "<skill-root>/examples/kdesign-components.json" --workflow custom-select --tab-id 123
+
+node "<skill-root>/scripts/run-workflow.mjs" list "<skill-root>/examples/kdesign-pro-pages.json"
+node "<skill-root>/scripts/run-workflow.mjs" run "<skill-root>/examples/kdesign-pro-pages.json" --workflow query-list --tab-id 123
+```
+
+Read [kdesign.md](kdesign.md) before adapting the locators. These files demonstrate standard high-level calls; they are not new KDesign-specific Bridge methods.

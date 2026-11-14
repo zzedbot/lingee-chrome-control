@@ -26,8 +26,11 @@ Do not reimplement JSON-RPC, read runtime descriptors, or supply authentication 
 - `node "<skill-root>/scripts/preflight.mjs"`: read-only version, compatibility, capability, handshake, and policy-gate verification.
 - `node "<skill-root>/scripts/install-host.mjs" --extension-id <id> --dry-run`: verify the bundled Windows Host hash and target paths without mutation; omit `--dry-run` only with explicit installation approval.
 - `node "<skill-root>/scripts/uninstall-host.mjs"`: remove the per-user Windows Host registration and runtime only with explicit removal approval; policy is preserved.
+- `node "<skill-root>/scripts/run-workflow.mjs" validate <workflow.json>`: validate a named high-level workflow without connecting to Chrome.
+- `node "<skill-root>/scripts/run-workflow.mjs" run <workflow.json> --workflow <id> --tab-id <id>`: run a reviewed sequence containing only standard methods, using one stable session for the process.
 - `references/capabilities.md`: grouped capability and lifecycle overview.
 - `references/examples.md`: complete standard CLI workflows for all capability families.
+- `references/kdesign.md`: detailed KDesign and KDesign Pro locator, action, verification, and recovery patterns.
 
 ## Tool mapping
 

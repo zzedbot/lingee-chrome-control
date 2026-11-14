@@ -10,6 +10,7 @@ const REQUIRED_COMPATIBILITY = Object.freeze({
   debuggerState: "generation-v4",
   monitorDiagnostics: "counts-v2",
   virtualCursor: "overlay-v13",
+  pointerInput: "bounded-pointer-v3",
   dialogHandling: "codex-lifecycle-v3",
   locatorQueries: "codex-read-v1",
   frameLocators: "isolated-world-v1",

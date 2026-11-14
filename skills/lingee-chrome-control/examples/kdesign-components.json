@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "workflows": [
+    {
+      "id": "custom-select",
+      "description": "Open a KDesign composite Select, choose one visible option, and verify the displayed value.",
+      "defaults": {
+        "TRIGGER_LOCATOR": { "css": "[data-testid='department-field'] .kd-select-selector" },
+        "PANEL_LOCATOR": { "css": ".kd-select-dropdown" },
+        "OPTION_LOCATOR": { "role": "option", "name": "销售部", "exact": true },
+        "VALUE_LOCATOR": { "testId": "department-value" },
+        "EXPECTED_VALUE": "销售部"
+      },
+      "steps": [
+        { "id": "open-select", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$TRIGGER_LOCATOR" } },
+        { "id": "wait-panel", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$PANEL_LOCATOR", "state": "visible", "timeoutMs": 5000 } },
+        { "id": "choose-option", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$OPTION_LOCATOR" } },
+        { "id": "verify-value", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$VALUE_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_VALUE" } }
+      ]
+    },
+    {
+      "id": "checkbox",
+      "description": "Set a real KDesign checkbox input idempotently and verify the application state.",
+      "defaults": {
+        "CHECKBOX_LOCATOR": { "css": "[data-testid='agreement-field'] input[type='checkbox']" },
+        "STATE_LOCATOR": { "testId": "agreement-state" },
+        "EXPECTED_STATE": "checked"
+      },
+      "steps": [
+        { "id": "set-checked", "method": "browser.setChecked", "params": { "tabId": "$TAB_ID", "locator": "$CHECKBOX_LOCATOR", "checked": true } },
+        { "id": "verify-state", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$STATE_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_STATE" } }
+      ]
+    },
+    {
+      "id": "open-overlay",
+      "description": "Open a KDesign Modal or Drawer and verify its visible title.",
+      "defaults": {
+        "TRIGGER_LOCATOR": { "role": "button", "name": "打开弹层", "exact": true },
+        "OVERLAY_LOCATOR": { "role": "dialog" },
+        "TITLE_LOCATOR": { "css": ".kd-modal-title" },
+        "EXPECTED_TITLE": "详情"
+      },
+      "steps": [
+        { "id": "open-overlay", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$TRIGGER_LOCATOR" } },
+        { "id": "wait-overlay", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$OVERLAY_LOCATOR", "state": "visible", "timeoutMs": 5000 } },
+        { "id": "verify-title", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$TITLE_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_TITLE" } }
+      ]
+    },
+    {
+      "id": "upload-file",
+      "description": "Set reviewed absolute files on an explicit KDesign file input and verify page status.",
+      "defaults": {
+        "INPUT_LOCATOR": { "css": "[data-testid='upload-field'] input[type='file']" },
+        "STATUS_LOCATOR": { "testId": "upload-state" },
+        "EXPECTED_STATUS": "已选择"
+      },
+      "steps": [
+        { "id": "set-file", "method": "browser.setFileInput", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR", "files": "$FILE_PATHS" } },
+        { "id": "verify-status", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$STATUS_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_STATUS" } }
+      ]
+    }
+  ]
+}

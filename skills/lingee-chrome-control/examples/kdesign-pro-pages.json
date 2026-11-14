@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "workflows": [
+    {
+      "id": "query-list",
+      "description": "Fill a KDesign Pro list filter, execute the visible query action, and verify result state.",
+      "defaults": {
+        "KEYWORD_LOCATOR": { "label": "关键词" },
+        "QUERY_LOCATOR": { "role": "button", "name": "查询", "exact": true },
+        "RESULT_LOCATOR": { "testId": "query-result" },
+        "KEYWORD": "测试",
+        "EXPECTED_RESULT": "测试"
+      },
+      "steps": [
+        { "id": "fill-keyword", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$KEYWORD_LOCATOR", "value": "$KEYWORD" } },
+        { "id": "run-query", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$QUERY_LOCATOR" } },
+        { "id": "verify-result", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 2000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "select-table-row",
+      "description": "Select one real row checkbox and verify the KDesign Pro selected-row summary.",
+      "defaults": {
+        "ROW_CHECKBOX_LOCATOR": { "css": "[data-testid='result-table'] tbody tr:first-child input[type='checkbox']" },
+        "SUMMARY_LOCATOR": { "testId": "selection-summary" },
+        "EXPECTED_SUMMARY": "1"
+      },
+      "steps": [
+        { "id": "select-row", "method": "browser.setChecked", "params": { "tabId": "$TAB_ID", "locator": "$ROW_CHECKBOX_LOCATOR", "checked": true } },
+        { "id": "verify-summary", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$SUMMARY_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_SUMMARY" } }
+      ]
+    },
+    {
+      "id": "submit-form",
+      "description": "Fill one KDesign Pro form field, submit once, and verify submitted state or validation output.",
+      "defaults": {
+        "NAME_LOCATOR": { "label": "名称" },
+        "SUBMIT_LOCATOR": { "role": "button", "name": "提交", "exact": true },
+        "STATE_LOCATOR": { "testId": "submit-state" },
+        "NAME": "自动化测试",
+        "EXPECTED_STATE": "自动化测试"
+      },
+      "steps": [
+        { "id": "fill-name", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$NAME_LOCATOR", "value": "$NAME" } },
+        { "id": "submit-once", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$SUBMIT_LOCATOR" } },
+        { "id": "verify-submit", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$STATE_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_STATE" } }
+      ]
+    },
+    {
+      "id": "switch-detail-tab",
+      "description": "Switch a KDesign Pro detail tab and verify its visible panel.",
+      "defaults": {
+        "TAB_LOCATOR": { "role": "tab", "name": "操作记录", "exact": true },
+        "PANEL_LOCATOR": { "role": "tabpanel", "name": "操作记录" },
+        "EXPECTED_TEXT": "操作记录"
+      },
+      "steps": [
+        { "id": "switch-tab", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$TAB_LOCATOR" } },
+        { "id": "wait-panel", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$PANEL_LOCATOR", "state": "visible", "timeoutMs": 5000 } },
+        { "id": "verify-panel", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$PANEL_LOCATOR", "maxChars": 2000 }, "expect": { "includes": "$EXPECTED_TEXT" } }
+      ]
+    }
+  ]
+}

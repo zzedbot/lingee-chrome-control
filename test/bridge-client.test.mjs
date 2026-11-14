@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { connectBridge, diagnoseBridgeInstances, listBridgeInstances } from "../src/bridge-client.mjs";
+import { connectBridge, DEFAULT_CALL_TIMEOUT_MS, diagnoseBridgeInstances, listBridgeInstances } from "../src/bridge-client.mjs";
+
+test("bridge connections use the documented 30 second call timeout by default", () => {
+  assert.equal(DEFAULT_CALL_TIMEOUT_MS, 30000);
+});
 
 test("read-only discovery retains an unreachable runtime descriptor", async () => {
   await withRuntimeDirectory(async (runtimeDirectory) => {

@@ -113,6 +113,11 @@ test("virtual cursor starts centered, stays visible, recovers its host, and is r
     assert.deepEqual(await painted, { visible: true, x: 40, y: 50, phase: "pressed", topLayer: true });
     assert.equal(paintFrames, 2, "feedback resolves after two animation frames");
 
+    globalThis.requestAnimationFrame = () => 1;
+    const fallbackStartedAt = Date.now();
+    assert.deepEqual(await renderVirtualCursor(VIRTUAL_CURSOR_KEY, 42, 52, "move", { waitForPaint: true }), { visible: true, x: 42, y: 52, phase: "move", topLayer: true });
+    assert.ok(Date.now() - fallbackStartedAt >= 180, "throttled animation frames use the bounded paint fallback");
+
     renderVirtualCursor(VIRTUAL_CURSOR_KEY, 70, 80, "pressed", { drag: true, originX: 40, originY: 50 });
     assert.equal(replacement.cursor.classList.has("dragging"), true);
     assert.equal(replacement.cursor.style.transitionDuration, "0ms");
@@ -171,6 +176,9 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /async function controlledDialogTab[\s\S]*assertTabNotBlocked[\s\S]*controlledTabs\.has[\s\S]*attachedTabs\.has/);
   assert.match(background, /port\.onMessage\.addListener\(\(message\) => \{ void onNativeMessage\(message, port\); \}\)/, "native messages remain concurrent while a page dialog blocks the initiating click");
   assert.match(background, /dialogHandling: "codex-lifecycle-v3"/);
+  assert.match(background, /pointerInput: "bounded-pointer-v3"/);
+  assert.match(background, /function createdTabsForClick[\s\S]*entry\.openerTabId === tabId[\s\S]*entry\.windowId === sourceTab\.windowId/, "new tabs without an opener are correlated only when the controlled source was active in the same window");
+  assert.match(background, /createdTabIds\.length && error\?\.code === "CURSOR_RENDER_FAILED"[\s\S]*post-new-tab-click[\s\S]*finalFeedbackUnavailable: true/, "a confirmed child tab makes unavailable post-click feedback non-fatal after the pre-input visual contract passed");
   assert.match(background, /locatorQueries: "codex-read-v1"/);
   assert.match(background, /resolveFrameContext[\s\S]*this\.scrollIntoView\(\{block:'center',inline:'center',behavior:'instant'\}\)[\s\S]*getBoundingClientRect/, "frame elements are scrolled into the top-level viewport before pointer coordinates are composed");
   assert.match(background, /resolveFrameContext\(tabId, framePath, false\)[\s\S]*resolveLocator\.toString\(\)[\s\S]*false/, "frame offsets are measured again without scrolling after the target scroll changes ancestor geometry");
@@ -181,6 +189,14 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /Page\.javascriptDialogOpening[\s\S]*jsDialogsByTab\.set[\s\S]*dialogOpenWaitersByTab/);
   assert.match(background, /Page\.javascriptDialogClosed[\s\S]*jsDialogsByTab\.delete[\s\S]*dialogCloseWaitersByTab/);
   assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*Promise\.race[\s\S]*dialogOpened: true/);
+  assert.match(background, /async function sendPointerCdp[\s\S]*POINTER_ACK_TIMEOUT_MS[\s\S]*"POINTER_INPUT_TIMEOUT"/, "every pointer command must have a bounded acknowledgement");
+  assert.match(background, /async function sendCdp[\s\S]*CDP_ACK_TIMEOUT_MS[\s\S]*"CDP_COMMAND_TIMEOUT"/, "generic debugger commands must have a bounded acknowledgement");
+  assert.match(background, /async function requireVirtualCursor[\s\S]*CURSOR_REQUIRED_DELAYS_MS[\s\S]*deadline[\s\S]*CURSOR_RENDER_FAILED/, "required cursor feedback retries transient render failures within one bounded budget");
+  assert.match(background, /async function ensureDebugger[\s\S]*wasControlled[\s\S]*recoverCursor && !wasControlled[\s\S]*recoverVirtualCursor/, "cursor recovery runs when control starts, not before every debugger command");
+  assert.match(background, /async function sendCdp[\s\S]*ensureDebugger\(tabId, \{ recoverCursor: false \}\)/, "generic debugger commands do not repeat cursor recovery");
+  assert.match(background, /chrome\.tabs\.onActivated\.addListener[\s\S]*recoverVirtualCursor\(tabId, "tab-activated"\)/, "manually activated controlled tabs recover their cursor");
+  assert.match(background, /case "browser\.activateTab"[\s\S]*controlledTabs\.has\(tabId\)[\s\S]*await recoverVirtualCursor\(tabId, "tab-activated"\)/, "standard tab activation waits for cursor recovery");
+  assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*boundedBrowserCall\(command, POINTER_ACK_TIMEOUT_MS, "POINTER_INPUT_TIMEOUT"[\s\S]*createdTabsForClick[\s\S]*releaseAcknowledgementTimedOut: true/, "new-tab clicks cannot hold the tab queue when Chrome omits the mouse-release acknowledgement");
   assert.match(background, /const release = await dispatchMouseReleaseOrDialog[\s\S]*if \(release\.dialogOpened\) return release/);
   assert.match(background, /frame\.documentId !== movement\.documentId[\s\S]*post-click-navigation[\s\S]*navigationStarted: true/);
   const dialogCase = background.match(/case "browser\.handleDialog":([\s\S]*?)case "browser\.cdp":/)?.[1] || "";

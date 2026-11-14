@@ -244,7 +244,17 @@ export function renderVirtualCursor(markerKey, rawX, rawY, phase = "move", detai
     topLayer: state.host.matches?.(":popover-open") === true
   });
   if (details?.waitForPaint && typeof requestAnimationFrame === "function") {
-    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(currentResult()))));
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(currentResult());
+      };
+      const timer = setTimeout(finish, 200);
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+    });
   }
   return currentResult();
 }

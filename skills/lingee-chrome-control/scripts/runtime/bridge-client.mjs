@@ -4,6 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import { runtimeDirectory } from "./runtime-paths.mjs";
 
+export const DEFAULT_CALL_TIMEOUT_MS = 30000;
+
 const DEFAULT_PROBE_ATTEMPTS = 3;
 const DEFAULT_PROBE_TIMEOUT_MS = 1000;
 const DEFAULT_PROBE_RETRY_DELAY_MS = 100;
@@ -100,7 +102,7 @@ async function discoverBridgeDescriptors({
   };
 }
 
-export async function connectBridge({ instanceId, timeoutMs = 3000, cleanupStale = true, sessionId } = {}) {
+export async function connectBridge({ instanceId, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, cleanupStale = true, sessionId } = {}) {
   const { instances } = await discoverBridgeDescriptors({ cleanupStale });
   const descriptor = instanceId ? instances.find((item) => item.instanceId === instanceId) : instances[0];
   if (!descriptor) throw Object.assign(new Error("No running Lingee Chrome Agent Bridge instance was found. Open Chrome and enable the extension."), { code: "BRIDGE_NOT_FOUND" });
@@ -108,7 +110,7 @@ export async function connectBridge({ instanceId, timeoutMs = 3000, cleanupStale
 }
 
 export class BridgeClient {
-  constructor(descriptor, timeoutMs = 30000, sessionId = process.env.UNIVERSAL_BROWSER_SESSION_ID || crypto.randomUUID()) {
+  constructor(descriptor, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, sessionId = process.env.UNIVERSAL_BROWSER_SESSION_ID || crypto.randomUUID()) {
     this.descriptor = descriptor;
     this.timeoutMs = timeoutMs;
     this.nextId = 1;

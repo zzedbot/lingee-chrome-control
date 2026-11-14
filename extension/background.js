@@ -14,6 +14,10 @@ const CURSOR_MIN_MOTION_MS = 180;
 const CURSOR_MAX_MOTION_MS = 360;
 const CURSOR_SETTLE_MS = 70;
 const CURSOR_RECOVERY_DELAYS_MS = [0, 40, 120, 300];
+const CURSOR_REQUIRED_DELAYS_MS = [0, 40, 120];
+const CURSOR_RECOVERY_BUDGET_MS = 2500;
+const POINTER_ACK_TIMEOUT_MS = 2500;
+const CDP_ACK_TIMEOUT_MS = 10000;
 const CURSOR_PRESS_HOLD_MS = 80;
 const CLICK_FEEDBACK_MS = 560;
 const WHEEL_FEEDBACK_MIN_MS = 120;
@@ -169,7 +173,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   for (const [id, chooser] of fileChoosers) if (chooser.tabId === tabId) fileChoosers.delete(id);
 });
 chrome.tabs.onCreated.addListener((tab) => {
-  createdTabs.push({ tabId: tab.id, openerTabId: tab.openerTabId, createdAt: Date.now() });
+  createdTabs.push({ tabId: tab.id, openerTabId: tab.openerTabId, windowId: tab.windowId, active: tab.active === true, createdAt: Date.now() });
   if (createdTabs.length > 200) createdTabs.splice(0, createdTabs.length - 200);
 });
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
@@ -197,6 +201,9 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading" && controlledTabs.has(tabId)) refreshForeignFrameMonitor(tabId);
   if (changeInfo.status === "complete" && controlledTabs.has(tabId)) recoverVirtualCursor(tabId, "tab-complete");
+});
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  if (controlledTabs.has(tabId)) void recoverVirtualCursor(tabId, "tab-activated");
 });
 chrome.webNavigation.onCommitted.addListener(({ tabId, frameId }) => {
   if (frameId === 0 && controlledTabs.has(tabId)) refreshForeignFrameMonitor(tabId);
@@ -300,7 +307,7 @@ async function execute(method, params) {
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1" },
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", pointerInput: "bounded-pointer-v3", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -318,8 +325,10 @@ async function execute(method, params) {
       });
     }
     case "browser.activateTab": {
-      const tab = await chrome.tabs.update(requireTabId(params), { active: true });
+      const tabId = requireTabId(params);
+      const tab = await chrome.tabs.update(tabId, { active: true });
       if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+      if (controlledTabs.has(tabId)) await recoverVirtualCursor(tabId, "tab-activated");
       return tab;
     }
     case "browser.claimTab": {
@@ -583,9 +592,10 @@ function runControlledOperation(params, settings, operation) {
   });
 }
 
-async function ensureDebugger(tabId) {
+async function ensureDebugger(tabId, { recoverCursor = true } = {}) {
+  const wasControlled = controlledTabs.has(tabId) && attachedTabs.has(tabId);
   const result = await debuggerController.ensure(tabId);
-  if (controlledTabs.has(tabId)) await recoverVirtualCursor(tabId, "control-start");
+  if (recoverCursor && !wasControlled && controlledTabs.has(tabId)) await recoverVirtualCursor(tabId, "control-start");
   return result;
 }
 
@@ -744,11 +754,16 @@ function refreshForeignFrameMonitor(tabId) {
 }
 
 async function recoverVirtualCursor(tabId, reason) {
+  const deadline = Date.now() + CURSOR_RECOVERY_BUDGET_MS;
   for (const delayMs of CURSOR_RECOVERY_DELAYS_MS) {
     if (!controlledTabs.has(tabId)) return false;
-    if (delayMs > 0) await waitForCursorMotion(delayMs);
+    const beforeDelay = deadline - Date.now();
+    if (beforeDelay <= 0) break;
+    if (delayMs > 0) await waitForCursorMotion(Math.min(delayMs, beforeDelay));
     if (!controlledTabs.has(tabId)) return false;
-    const rendered = await showVirtualCursor(tabId, null, null, "ensure");
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const rendered = await showVirtualCursor(tabId, null, null, "ensure", {}, remaining);
     if (rendered?.visible) return true;
   }
   recordEvent({ source: { tabId }, method: "Bridge.virtualCursorUnavailable", params: { reason } });
@@ -756,13 +771,23 @@ async function recoverVirtualCursor(tabId, reason) {
 }
 
 async function sendCdp(tabId, method, params = {}) {
-  await ensureDebugger(tabId);
-  return chrome.debugger.sendCommand({ tabId }, method, compact(params));
+  await ensureDebugger(tabId, { recoverCursor: false });
+  return boundedBrowserCall(
+    chrome.debugger.sendCommand({ tabId }, method, compact(params)),
+    CDP_ACK_TIMEOUT_MS,
+    "CDP_COMMAND_TIMEOUT",
+    `${method} timed out`
+  );
 }
 
 async function sendCdpInSession(tabId, sessionId, method, params = {}) {
-  await ensureDebugger(tabId);
-  return chrome.debugger.sendCommand(sessionId ? { tabId, sessionId } : { tabId }, method, compact(params));
+  await ensureDebugger(tabId, { recoverCursor: false });
+  return boundedBrowserCall(
+    chrome.debugger.sendCommand(sessionId ? { tabId, sessionId } : { tabId }, method, compact(params)),
+    CDP_ACK_TIMEOUT_MS,
+    "CDP_COMMAND_TIMEOUT",
+    `${method} timed out`
+  );
 }
 
 async function getOopifSession(tabId, frameId) {
@@ -843,7 +868,7 @@ function rejectOopifWaiters(tabId, message) {
   oopifSessionWaitersByTab.delete(tabId);
 }
 
-async function showVirtualCursor(tabId, x, y, phase, details = {}) {
+async function showVirtualCursor(tabId, x, y, phase, details = {}, timeoutMs = POINTER_ACK_TIMEOUT_MS) {
   try {
     const previous = cursorPositionsByTab.get(tabId);
     const effectiveX = x == null && previous ? previous.x : x;
@@ -853,7 +878,7 @@ async function showVirtualCursor(tabId, x, y, phase, details = {}) {
       func: renderVirtualCursor,
       args: [VIRTUAL_CURSOR_KEY, effectiveX, effectiveY, phase, details, chrome.runtime.getURL("icons/lingee-48.png")],
       injectImmediately: true
-    }), 2500, "CURSOR_RENDER_TIMEOUT", "Virtual cursor rendering timed out");
+    }), timeoutMs, "CURSOR_RENDER_TIMEOUT", "Virtual cursor rendering timed out");
     const rendered = results?.[0]?.result;
     if (Number.isFinite(rendered?.x) && Number.isFinite(rendered?.y)) {
       cursorPositionsByTab.set(tabId, { x: rendered.x, y: rendered.y, documentId: results?.[0]?.documentId });
@@ -866,9 +891,19 @@ async function showVirtualCursor(tabId, x, y, phase, details = {}) {
 }
 
 async function requireVirtualCursor(tabId, x, y, phase, details = {}, expectedDocumentId) {
-  const rendered = await showVirtualCursor(tabId, x, y, phase, details);
+  const deadline = Date.now() + CURSOR_RECOVERY_BUDGET_MS;
+  let rendered = null;
+  for (const delayMs of CURSOR_REQUIRED_DELAYS_MS) {
+    const beforeDelay = deadline - Date.now();
+    if (beforeDelay <= 0) break;
+    if (delayMs > 0) await waitForCursorMotion(Math.min(delayMs, beforeDelay));
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    rendered = await showVirtualCursor(tabId, x, y, phase, details, remaining);
+    if (rendered?.visible && rendered.topLayer === true && rendered.documentId) break;
+  }
   if (!rendered?.visible || rendered.topLayer !== true || !rendered.documentId) {
-    throw codedError("CURSOR_RENDER_FAILED", `Virtual cursor ${phase} feedback could not be rendered; browser input was not dispatched`, { tabId, phase });
+    throw codedError("CURSOR_RENDER_FAILED", `Virtual cursor ${phase} feedback could not be rendered; browser input was not dispatched`, { tabId, phase, attempts: CURSOR_REQUIRED_DELAYS_MS.length });
   }
   if (expectedDocumentId && rendered.documentId !== expectedDocumentId) {
     throw codedError("CURSOR_DOCUMENT_CHANGED", "The page changed while synchronizing virtual cursor feedback; browser input was not dispatched", {
@@ -944,7 +979,12 @@ function throwPageException(details) {
 
 async function resolveFrameContext(tabId, framePath, scrollFrames = true) {
   const path = validateFramePath(framePath);
-  const topDocument = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+  const topDocument = await boundedBrowserCall(
+    chrome.webNavigation.getFrame({ tabId, frameId: 0 }),
+    POINTER_ACK_TIMEOUT_MS,
+    "CDP_COMMAND_TIMEOUT",
+    "Top-level document lookup timed out"
+  );
   const { frameTree } = await sendCdp(tabId, "Page.getFrameTree", {});
   let current = frameTree.frame;
   let sessionId = null;
@@ -1031,11 +1071,21 @@ async function assertFrameContextFresh(tabId, context) {
 async function sendPointerCdp(tabId, method, params = {}, expectedDocumentId) {
   if (!controlledTabs.has(tabId)) throw codedError("POINTER_CONTROL_LOST", `Tab ${tabId} is no longer controlled`);
   if (expectedDocumentId) await assertPointerDocument(tabId, expectedDocumentId);
-  return chrome.debugger.sendCommand({ tabId }, method, compact(params));
+  return boundedBrowserCall(
+    chrome.debugger.sendCommand({ tabId }, method, compact(params)),
+    POINTER_ACK_TIMEOUT_MS,
+    "POINTER_INPUT_TIMEOUT",
+    `${method} acknowledgement timed out`
+  );
 }
 
 async function assertPointerDocument(tabId, expectedDocumentId) {
-  const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+  const frame = await boundedBrowserCall(
+    chrome.webNavigation.getFrame({ tabId, frameId: 0 }),
+    POINTER_ACK_TIMEOUT_MS,
+    "POINTER_INPUT_TIMEOUT",
+    "Pointer document lookup timed out"
+  );
   if (!frame?.documentId || frame.documentId !== expectedDocumentId) {
     throw codedError("CURSOR_DOCUMENT_CHANGED", "The page changed before synchronized browser input could be dispatched", {
       tabId,
@@ -1064,6 +1114,8 @@ async function clickLocator(tabId, locator, button, clickCount, framePath) {
 }
 
 async function clickCoordinates(tabId, x, y, button, clickCount, frameContext) {
+  const clickStartedAt = Date.now();
+  const sourceTab = await chrome.tabs.get(tabId);
   await assertFrameContextFresh(tabId, frameContext);
   const movement = await moveVirtualCursor(tabId, x, y);
   await assertFrameContextFresh(tabId, frameContext);
@@ -1074,7 +1126,7 @@ async function clickCoordinates(tabId, x, y, button, clickCount, frameContext) {
     pressed = true;
     await waitForCursorMotion(CURSOR_PRESS_HOLD_MS);
     await assertFrameContextFresh(tabId, frameContext);
-    const release = await dispatchMouseReleaseOrDialog(tabId, { type: "mouseReleased", x, y, button, buttons: 0, clickCount }, movement.documentId);
+    const release = await dispatchMouseReleaseOrDialog(tabId, { type: "mouseReleased", x, y, button, buttons: 0, clickCount }, movement.documentId, clickStartedAt, sourceTab);
     pressed = false;
     if (release.dialogOpened) return release;
   } finally {
@@ -1085,8 +1137,14 @@ async function clickCoordinates(tabId, x, y, button, clickCount, frameContext) {
   try {
     await requireVirtualCursor(tabId, x, y, "click", { waitForPaint: true }, movement.documentId);
     await waitForCursorMotion(CLICK_FEEDBACK_MS);
-    return { dialogOpened: false };
+    const createdTabIds = createdTabsForClick(tabId, sourceTab, clickStartedAt);
+    return { dialogOpened: false, ...(createdTabIds.length ? { newTabOpened: true, createdTabIds } : {}) };
   } catch (error) {
+    const createdTabIds = createdTabsForClick(tabId, sourceTab, clickStartedAt);
+    if (createdTabIds.length && error?.code === "CURSOR_RENDER_FAILED") {
+      void recoverVirtualCursor(tabId, "post-new-tab-click");
+      return { dialogOpened: false, newTabOpened: true, createdTabIds, finalFeedbackUnavailable: true };
+    }
     const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
     if (frame?.documentId && frame.documentId !== movement.documentId) {
       void recoverVirtualCursor(tabId, "post-click-navigation");
@@ -1114,25 +1172,42 @@ async function doubleClickLocator(tabId, locator, button, framePath) {
   return { x: target.x, y: target.y, button, clickCount: 2, doubleClicked: true };
 }
 
-async function dispatchMouseReleaseOrDialog(tabId, params, expectedDocumentId) {
+async function dispatchMouseReleaseOrDialog(tabId, params, expectedDocumentId, clickStartedAt = Date.now(), sourceTab) {
   let resolveDialog;
+  const releaseStartedAt = Date.now();
   const dialogOpened = new Promise((resolve) => { resolveDialog = resolve; });
   const waiters = dialogOpenWaitersByTab.get(tabId) || new Set();
   waiters.add(resolveDialog);
   dialogOpenWaitersByTab.set(tabId, waiters);
   if (jsDialogsByTab.has(tabId)) resolveDialog(jsDialogsByTab.get(tabId));
   const command = sendPointerCdp(tabId, "Input.dispatchMouseEvent", params, expectedDocumentId);
+  const boundedCommand = boundedBrowserCall(command, POINTER_ACK_TIMEOUT_MS, "POINTER_INPUT_TIMEOUT", "Mouse release acknowledgement timed out");
   try {
-    const outcome = await Promise.race([
-      command.then(() => ({ dialogOpened: false })),
-      dialogOpened.then((dialog) => ({ dialogOpened: true, dialog }))
-    ]);
+    let outcome;
+    try {
+      outcome = await Promise.race([
+        boundedCommand.then(() => ({ dialogOpened: false })),
+        dialogOpened.then((dialog) => ({ dialogOpened: true, dialog }))
+      ]);
+    } catch (error) {
+      const newTabOpened = createdTabsForClick(tabId, sourceTab, Math.min(releaseStartedAt, clickStartedAt)).length > 0;
+      if (error?.code !== "POINTER_INPUT_TIMEOUT" || !newTabOpened) throw error;
+      outcome = { dialogOpened: false, newTabOpened: true, releaseAcknowledgementTimedOut: true };
+    }
     if (outcome.dialogOpened) command.catch(() => {});
     return outcome;
   } finally {
     waiters.delete(resolveDialog);
     if (waiters.size === 0) dialogOpenWaitersByTab.delete(tabId);
   }
+}
+
+function createdTabsForClick(tabId, sourceTab, since) {
+  return createdTabs
+    .filter((entry) => entry.createdAt >= since
+      && (entry.openerTabId === tabId
+        || (sourceTab?.active === true && entry.active === true && entry.windowId === sourceTab.windowId)))
+    .map((entry) => entry.tabId);
 }
 
 function mouseButtonMask(button) {

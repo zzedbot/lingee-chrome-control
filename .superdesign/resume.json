@@ -58,6 +58,46 @@
         "visualKeyframes": "passed"
       },
       "updatedAt": "2026-09-16T00:09:00+08:00"
+    },
+    "kdesign-complete-test-lab": {
+      "targetKind": "new-ui",
+      "projectId": "815e5c19-f3c2-454b-92d8-b0c41be93c6c",
+      "activeDraftId": "691c8bcf-c55a-4de1-8b69-4ff2927f0ff1",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "docs-assets-lingee-logo-svg"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "docs-assets-lingee-logo-svg",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/815e5c19-f3c2-454b-92d8-b0c41be93c6c/brand-assets/docs-assets-lingee-logo-svg/lingee-logo.svg",
+          "sourcePath": "docs/assets/lingee-logo.svg"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/kdesign-test-lab-design-system.md",
+        "test/web-fixture/src/main.jsx",
+        "test/web-fixture/src/styles.css",
+        "test/web-fixture/README.md",
+        "test/web-fixture/REFERENCES.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "4192458e71d1c8249a81b1af9d1389f5c7bb1a4155ba1787165a258b993b875d",
+        ".superdesign/kdesign-test-lab-design-system.md": "c9af467dcbaf379bc60b755b1d9c71839754ea610dc642af6de996321a179476",
+        "test/web-fixture/src/main.jsx": "164e9bc026c79c5b121539127b2c9099c91cb569d892eb4725ec071391c50675",
+        "test/web-fixture/src/styles.css": "f1fe0db9bc66a76997e728ef040a186454251e5841eed6d8b937dfecae9bc998",
+        "test/web-fixture/README.md": "08f9aaab0007828d4dda1e5e0bfc6abee224c9aa310d8008af0c88a610e0f91a",
+        "test/web-fixture/REFERENCES.md": "d347bd287a6c8620e2941ea0f9385d51dd4c5f9f9974e1ed2ecb4c60ffce03ff"
+      },
+      "drafts": {
+        "691c8bcf-c55a-4de1-8b69-4ff2927f0ff1": {
+          "title": "KDesign Complete Test Lab Catalog",
+          "visualDirection": "Official KDesign enterprise component catalog and Pro route mirror",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-11-13T21:33:31+08:00"
     }
   }
 }

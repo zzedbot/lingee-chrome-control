@@ -79,12 +79,13 @@ This catalog describes the supported standard surface. Use `tools.md` for exact 
 
 ## Current compatibility contract
 
-The bundled version expects Host and extension `0.1.26` plus these compatibility markers:
+The bundled version expects Host and extension `0.1.27` plus these compatibility markers:
 
 - `foreignFrameMonitor: remove-after-blank-v11`
 - `debuggerState: generation-v4`
 - `monitorDiagnostics: counts-v2`
 - `virtualCursor: overlay-v13`
+- `pointerInput: bounded-pointer-v3`
 - `dialogHandling: codex-lifecycle-v3`
 - `locatorQueries: codex-read-v1`
 - `frameLocators: isolated-world-v1`
