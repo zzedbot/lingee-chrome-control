@@ -14,7 +14,7 @@ Open the printed loopback URL. Approve only that exact loopback host through the
 
 ## Pages
 
-- `#/lab`: native semantic input, pointer, drag, wheel, scroll, file input, dialogs, downloads, navigation, iframe observation, ambiguity and failure cases.
+- `#/lab`: native semantic input, React controlled-value replacement, generic Kingdee div toolbars, split buttons, row selection, pointer, drag, wheel, scroll, file input, dialogs, downloads, navigation, iframe observation, ambiguity and failure cases.
 - `#/kdesign`: catalog for all 62 official KDesign component directories that contain demos. Each component has its own `#/kdesign/<component>` route, source reference, stable locator and visible state output.
 - `#/pro`: catalog for all 22 official KDesign Pro templates. Each workbench, detail, list, report, form, exception and login source page has its own `#/pro/<template>` route.
 - `#/target`: deterministic navigation/reload target.
@@ -31,7 +31,7 @@ From the repository root:
 npm run test:web:chrome
 ```
 
-The runner uses only standard high-level Bridge methods. It verifies typed locator queries, asynchronous waits, same-origin/cross-origin/nested frames, frame freshness, SPA/full/redirect navigation, native checked/select controls, double-click, sequential input, session leases and tab markers, action-bound downloads, dynamic file choosers, structured console logs, pointer/dialog/tab flows, and bounded failure cases. It requires one selected live Bridge instance and already approved `127.0.0.1` and `localhost` hosts; it never edits policy. When sensitive-metadata access is disabled, history, bookmark, and download-metadata cases pass by verifying `SENSITIVE_METADATA_APPROVAL_REQUIRED` rather than enabling that separate gate.
+The runner uses only standard high-level Bridge methods. It verifies typed locator queries, asynchronous waits, same-origin/cross-origin/nested frames, frame freshness, SPA/full/redirect navigation, replacement of an existing React-controlled value, generic div actions, split-button menus, row selection, native checked/select controls, double-click, sequential input, session leases and tab markers, action-bound downloads, dynamic file choosers, structured console logs, pointer/dialog/tab flows, and bounded failure cases. It requires one selected live Bridge instance and already approved `127.0.0.1` and `localhost` hosts; it never edits policy. When sensitive-metadata access is disabled, history, bookmark, and download-metadata cases pass by verifying `SENSITIVE_METADATA_APPROVAL_REQUIRED` rather than enabling that separate gate.
 
 Run the independent KDesign/KDesign Pro scenario with:
 

@@ -80,12 +80,25 @@ Use coordinates only after a fresh screenshot and semantic retries:
 
 ```powershell
 node "<skill-root>/scripts/invoke.mjs" call browser.screenshot '{"tabId":123,"format":"png"}'
-node "<skill-root>/scripts/invoke.mjs" call browser.mouseMove '{"tabId":123,"x":640,"y":360}'
-node "<skill-root>/scripts/invoke.mjs" call browser.coordinateClick '{"tabId":123,"x":640,"y":360,"button":"left","clickCount":1}'
-node "<skill-root>/scripts/invoke.mjs" call browser.drag '{"tabId":123,"from":{"locator":{"testId":"card-a"}},"to":{"locator":{"testId":"column-done"}},"steps":18}'
-node "<skill-root>/scripts/invoke.mjs" call browser.wheel '{"tabId":123,"x":900,"y":600,"deltaY":480}'
-node "<skill-root>/scripts/invoke.mjs" call browser.scroll '{"tabId":123,"deltaY":600}'
+node "<skill-root>/scripts/invoke.mjs" call browser.mouseMove '{"tabId":123,"observationId":"<observation-id-from-immediately-preceding-screenshot>","x":640,"y":360}'
+node "<skill-root>/scripts/invoke.mjs" call browser.coordinateClick '{"tabId":123,"observationId":"<fresh-observation-id>","x":640,"y":360,"button":"left","clickCount":1}'
+node "<skill-root>/scripts/invoke.mjs" call browser.drag '{"tabId":123,"observationId":"<fresh-observation-id>","from":{"locator":{"testId":"card-a"}},"to":{"locator":{"testId":"column-done"}},"steps":18}'
+node "<skill-root>/scripts/invoke.mjs" call browser.wheel '{"tabId":123,"observationId":"<fresh-observation-id>","x":900,"y":600,"deltaY":480}'
+node "<skill-root>/scripts/invoke.mjs" call browser.scroll '{"tabId":123,"observationId":"<fresh-observation-id>","deltaY":600}'
 ```
+
+Capture a new viewport PNG before every coordinate operation above. An observation is single-use and the result returns the shared `operationSequence` for visual feedback and actual input.
+
+For responsive checks, read the current viewport, apply one bounded temporary profile, capture fresh evidence, and reset it:
+
+```powershell
+node "<skill-root>/scripts/invoke.mjs" call browser.getViewport '{"tabId":123}'
+node "<skill-root>/scripts/invoke.mjs" call browser.setViewport '{"tabId":123,"width":390,"height":844,"deviceScaleFactor":3,"mobile":true}'
+node "<skill-root>/scripts/invoke.mjs" call browser.screenshot '{"tabId":123,"format":"png"}'
+node "<skill-root>/scripts/invoke.mjs" call browser.resetViewport '{"tabId":123}'
+```
+
+Viewport overrides are temporary by default and are also reset by `browser.endSession`. Use `preserveOnSessionEnd:true` only when the user explicitly asks to keep the emulated viewport.
 
 ## Downloads
 
@@ -104,9 +117,12 @@ Use only reviewed absolute paths to existing regular files:
 
 ```powershell
 node "<skill-root>/scripts/invoke.mjs" call browser.waitForFileChooser '{"tabId":123,"action":{"method":"browser.click","params":{"locator":{"role":"button","name":"选择文件","exact":true}}},"timeoutMs":15000}'
-node "<skill-root>/scripts/invoke.mjs" call browser.setFileChooserFiles '{"tabId":123,"chooserId":"<chooser-id-from-result>","files":["C:\\approved\\report.pdf"]}'
-node "<skill-root>/scripts/invoke.mjs" call browser.setFileInput '{"tabId":123,"selector":"input[type=file]","files":["C:\\approved\\report.pdf"]}'
+node "<skill-root>/scripts/invoke.mjs" call browser.prepareActionIntent '{"tabId":123,"actionType":"upload","summary":"Upload approved report.pdf","dataTypes":["application/pdf"],"action":{"method":"browser.setFileChooserFiles","params":{"chooserId":"<chooser-id-from-result>","files":["C:\\approved\\report.pdf"]}}}'
+node "<skill-root>/scripts/invoke.mjs" call browser.confirmActionIntent '{"intentId":"<intent-id-from-result>","decision":"approve"}'
+node "<skill-root>/scripts/invoke.mjs" call browser.executeActionIntent '{"intentId":"<intent-id-from-result>"}'
 ```
+
+For a CSS input, prepare the same `upload` intent with nested method `browser.setFileInput` and exact `selector`/`files`. Never call either upload method directly.
 
 ## JavaScript dialogs
 
@@ -140,6 +156,34 @@ node "<skill-root>/scripts/invoke.mjs" call browser.transferTab '{"tabId":123,"t
 ```
 
 Read-only calls may be shared; mutating calls require ownership.
+
+## Browser session clipboard
+
+The clipboard is private Host memory for the current `UNIVERSAL_BROWSER_SESSION_ID`; it is not the Windows or Chrome global clipboard. Obtain separate explicit approvals before enabling read and write:
+
+```powershell
+node "<skill-root>/scripts/invoke.mjs" call policy.setSessionClipboardWrite '{"enabled":true}'
+node "<skill-root>/scripts/invoke.mjs" call browser.sessionClipboardWrite '{"items":[{"mimeType":"text/plain","data":"reviewed text"},{"mimeType":"text/markdown","data":"**reviewed text**"}]}'
+
+node "<skill-root>/scripts/invoke.mjs" call policy.setSessionClipboardRead '{"enabled":true}'
+node "<skill-root>/scripts/invoke.mjs" call browser.sessionClipboardRead '{"mimeTypes":["text/plain"]}'
+node "<skill-root>/scripts/invoke.mjs" call browser.sessionClipboardClear '{}'
+node "<skill-root>/scripts/invoke.mjs" call policy.setSessionClipboardRead '{"enabled":false}'
+node "<skill-root>/scripts/invoke.mjs" call policy.setSessionClipboardWrite '{"enabled":false}'
+```
+
+`text/html` is stored as inert UTF-8 data. `image/png` requires `{"encoding":"base64"}` and a canonical Base64 PNG payload. Other binary MIME types are rejected. `browser.endSession` clears remaining entries automatically.
+
+## Export reviewed current-document resources
+
+List the current document first, review the returned approved URLs, then export only the required opaque IDs while the document remains unchanged:
+
+```powershell
+node "<skill-root>/scripts/invoke.mjs" call browser.listObservedResources '{"tabId":123,"types":["Stylesheet","Image"],"maxResults":50}'
+node "<skill-root>/scripts/invoke.mjs" call browser.exportObservedResources '{"tabId":123,"resourceIds":["<resource-id>"]}'
+```
+
+The result is a bounded session-temporary ZIP with a manifest. Deliver or copy the approved artifact before `browser.endSession`; session cleanup removes it. Navigation invalidates prior IDs. Do not replace this workflow with a caller-supplied URL, hidden download endpoint, cookie reuse, raw CDP, or page script.
 
 ## Preserve output and end the task
 

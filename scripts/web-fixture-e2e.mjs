@@ -35,6 +35,7 @@ if (!hostAllowed(policy, "127.0.0.1") || !hostAllowed(policy, "localhost")) {
 
 let tabId;
 let childTabId;
+let resourceExportPath;
 const checks = [];
 let stage = "start";
 try {
@@ -60,6 +61,24 @@ try {
   const screenshot = await checked("browser.screenshot", () => bridge.call("browser.screenshot", { tabId, format: "png" }));
   assert.match(screenshot.mimeType, /^image\/png$/);
   assert.ok(screenshot.data.length > 1000);
+  const nativeViewport = await checked("browser.getViewport", () => bridge.call("browser.getViewport", { tabId }));
+  assert.equal(nativeViewport.emulated, false);
+  const mobileViewport = await checked("browser.setViewport", () => bridge.call("browser.setViewport", { tabId, width: 390, height: 844, deviceScaleFactor: 3, mobile: true }));
+  assert.equal(mobileViewport.emulated, true);
+  assert.deepEqual(mobileViewport.requested, { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+  assert.equal((await bridge.call("browser.screenshot", { tabId, format: "png" })).mimeType, "image/png");
+  const restoredViewport = await checked("browser.resetViewport", () => bridge.call("browser.resetViewport", { tabId }));
+  assert.equal(restoredViewport.emulated, false);
+  assert.equal(restoredViewport.changed, true);
+
+  const observedResources = await checked("browser.listObservedResources", () => bridge.call("browser.listObservedResources", { tabId, types: ["Stylesheet"], maxResults: 20 }));
+  assert.ok(observedResources.resources.length > 0, "fixture should expose at least one stylesheet resource");
+  assert.ok(observedResources.resources.every(({ url }) => url.startsWith(baseUrl)), "resource list must stay on the approved fixture origin");
+  const resourceExport = await checked("browser.exportObservedResources", () => bridge.call("browser.exportObservedResources", { tabId, resourceIds: [observedResources.resources[0].resourceId] }));
+  resourceExportPath = resourceExport.path;
+  assert.equal(resourceExport.resourceCount, 1);
+  assert.equal(resourceExport.lifecycle, "session-temporary");
+  assert.equal((await readFile(resourceExportPath)).subarray(0, 4).toString("hex"), "504b0304");
 
   assert.equal(await checked("browser.locatorCount", () => bridge.call("browser.locatorCount", { tabId, locator: { css: ".locator-query-item" } })), 2);
   assert.deepEqual(await checked("browser.locatorAllTextContents", () => bridge.call("browser.locatorAllTextContents", { tabId, locator: { css: ".locator-query-item" }, maxResults: 10 })), ["查询文本 Alpha", "查询文本 Beta"]);
@@ -88,7 +107,8 @@ try {
 
   await checked("browser.click", () => bridge.call("browser.click", { tabId, locator: { testId: "native-click" } }));
   await expectText(/native-click:ok/);
-  await checked("browser.fill", () => bridge.call("browser.fill", { tabId, locator: { testId: "native-fill" }, value: "Lingee Fill" }));
+  await checked("browser.fill-existing-controlled-value", () => bridge.call("browser.fill", { tabId, locator: { testId: "native-fill" }, value: "旧的受控值" }));
+  await checked("browser.fill-replace-controlled-value", () => bridge.call("browser.fill", { tabId, locator: { testId: "native-fill" }, value: "Lingee Fill" }));
   await checked("browser.click-focus", () => bridge.call("browser.click", { tabId, locator: { testId: "native-key" } }));
   await checked("browser.press", () => bridge.call("browser.press", { tabId, key: "Enter" }));
   await checked("browser.click-type-focus", () => bridge.call("browser.click", { tabId, locator: { testId: "native-type" } }));
@@ -106,32 +126,47 @@ try {
   await checked("browser.pressSequentially", () => bridge.call("browser.pressSequentially", { tabId, locator: { testId: "sequential-input" }, text: "Lingee", delayMs: 20, timeoutMs: 5000 }));
   await expectLocatorText({ testId: "semantic-result" }, /sequential:Lingee/);
 
+  assert.equal(await checked("browser.locatorCount-generic-div", () => bridge.call("browser.locatorCount", { tabId, locator: { css: ".generic-business-action", text: "新增", exact: true } })), 1);
+  await checked("browser.click-generic-div", () => bridge.call("browser.click", { tabId, locator: { css: ".generic-business-action", text: "新增", exact: true } }));
+  await expectLocatorText({ testId: "generic-business-result" }, /新增:ok/);
+  await checked("browser.setChecked-business-row", () => bridge.call("browser.setChecked", { tabId, locator: { testId: "generic-business-row-check" }, checked: true }));
+  await expectLocatorText({ testId: "generic-business-result" }, /selected=true/);
+  await checked("browser.click-split-arrow", () => bridge.call("browser.click", { tabId, locator: { css: ".generic-business-split > :nth-child(2)" } }));
+  await checked("browser.waitFor-split-menu", () => bridge.call("browser.waitFor", { tabId, locator: { css: ".generic-business-menu-item", text: "反审核", exact: true }, state: "visible", timeoutMs: 5000 }));
+  await checked("browser.click-generic-menu-item", () => bridge.call("browser.click", { tabId, locator: { css: ".generic-business-menu-item", text: "反审核", exact: true } }));
+  await expectLocatorText({ testId: "generic-business-result" }, /反审核:ok.*menu=false/s);
+
   const coordinate = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#coordinate-target");
   const coordinatePoint = center(coordinate);
-  await checked("browser.mouseMove", () => bridge.call("browser.mouseMove", { tabId, ...coordinatePoint }));
-  await checked("browser.coordinateClick", () => bridge.call("browser.coordinateClick", { tabId, ...coordinatePoint }));
+  const staleObservationId = await freshObservation();
+  await checked("browser.click-stale-observation-invalidator", () => bridge.call("browser.click", { tabId, locator: { testId: "coordinate-target" } }));
+  await checked("browser.mouseMove-stale-observation-gate", () => expectCode("OBSERVATION_NOT_FOUND", () => bridge.call("browser.mouseMove", { tabId, observationId: staleObservationId, ...coordinatePoint })));
+  await checked("browser.mouseMove", async () => bridge.call("browser.mouseMove", { tabId, observationId: await freshObservation(), ...coordinatePoint }));
+  await checked("browser.coordinateClick", async () => bridge.call("browser.coordinateClick", { tabId, observationId: await freshObservation(), ...coordinatePoint }));
   await expectText(/coordinate:/);
+  await checked("browser.click-drag-handle-into-view", () => bridge.call("browser.click", { tabId, locator: { testId: "drag-handle" } }));
   const handle = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#drag-handle");
-  await checked("browser.drag", () => bridge.call("browser.drag", { tabId, from: center(handle), to: { x: center(handle).x + 180, y: center(handle).y }, steps: 12 }));
+  await checked("browser.drag", async () => bridge.call("browser.drag", { tabId, observationId: await freshObservation(), from: center(handle), to: { x: center(handle).x + 180, y: center(handle).y }, steps: 12 }));
   await expectText(/drag=(1[0-9]{2}|2[0-9]{2})/);
 
-  await checked("browser.scroll", () => bridge.call("browser.scroll", { tabId, deltaY: 500 }));
+  await checked("browser.scroll", async () => bridge.call("browser.scroll", { tabId, observationId: await freshObservation(), deltaY: 500 }));
+  await checked("browser.click-wheel-zone-into-view", () => bridge.call("browser.click", { tabId, locator: { testId: "wheel-zone" } }));
   const wheelRect = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#wheel-zone");
-  await checked("browser.wheel", () => bridge.call("browser.wheel", { tabId, ...center(wheelRect), deltaY: 180 }));
+  await checked("browser.wheel", async () => bridge.call("browser.wheel", { tabId, observationId: await freshObservation(), ...center(wheelRect), deltaY: 180 }));
   await waitForRectMovement("#wheel-zone", wheelRect.y);
 
-  await checked("browser.scroll-long-page", () => bridge.call("browser.scroll", { tabId, deltaY: 900 }));
+  await checked("browser.scroll-long-page", async () => bridge.call("browser.scroll", { tabId, observationId: await freshObservation(), deltaY: 900 }));
   await checked("browser.click-scroll-destination", () => bridge.call("browser.click", { tabId, locator: { testId: "scroll-destination" } }));
   await expectText(/scroll-target:ok/);
 
   const uploadPath = path.join(fixtureRoot, "fixtures", "upload.txt");
-  await checked("browser.setFileInput", () => bridge.call("browser.setFileInput", { tabId, selector: "[data-testid='file-input']", files: [uploadPath] }));
+  await executeConfirmedAction("browser.setFileInput", "Upload fixture file to the top-level test input", { method: "browser.setFileInput", params: { selector: "[data-testid='file-input']", files: [uploadPath] } }, ["text/plain"]);
   await expectText(/file:upload\.txt/);
-  await checked("browser.setFileInput-frame", () => bridge.call("browser.setFileInput", { tabId, framePath: outerFrame, selector: "[data-testid='frame-file']", files: [uploadPath] }));
+  await executeConfirmedAction("browser.setFileInput-frame", "Upload fixture file to the frame test input", { method: "browser.setFileInput", params: { framePath: outerFrame, selector: "[data-testid='frame-file']", files: [uploadPath] } }, ["text/plain"]);
   await expectText(/frame-file:upload\.txt/);
   const chooserResult = await checked("browser.waitForFileChooser", () => bridge.call("browser.waitForFileChooser", { tabId, action: { method: "browser.click", params: { locator: { testId: "open-file-chooser" } } }, timeoutMs: 5000 }));
   assert.equal(chooserResult.isMultiple, true);
-  await checked("browser.setFileChooserFiles", () => bridge.call("browser.setFileChooserFiles", { tabId, chooserId: chooserResult.chooserId, files: [uploadPath] }));
+  await executeConfirmedAction("browser.setFileChooserFiles", "Upload fixture file through the captured chooser", { method: "browser.setFileChooserFiles", params: { chooserId: chooserResult.chooserId, files: [uploadPath] } }, ["text/plain"]);
   await expectText(/chooser:upload\.txt/);
 
   await handleTestDialog({ testId: "confirm-dialog" }, { accept: true });
@@ -148,10 +183,10 @@ try {
   const consoleResult = await checked("browser.getConsoleLogs", () => bridge.call("browser.getConsoleLogs", { tabId, levels: ["warning"], text: "Lingee structured", limit: 20 }));
   assert.ok(consoleResult.logs.some((entry) => /Lingee structured warning/.test(entry.text)));
 
-  await checked("browser.scroll-frame", () => bridge.call("browser.scroll", { tabId, deltaY: 2000 }));
+  await checked("browser.scroll-frame", async () => bridge.call("browser.scroll", { tabId, observationId: await freshObservation(), deltaY: 2000 }));
   const frameRect = nodeRect(await bridge.call("browser.domSnapshot", { tabId, maxNodes: 1000 }), "#frame-shell");
-  await checked("browser.screenshot-frame", () => bridge.call("browser.screenshot", { tabId, format: "png" }));
-  await checked("browser.coordinateClick-frame", () => bridge.call("browser.coordinateClick", { tabId, x: frameRect.x + 230, y: frameRect.y + 52 }));
+  const frameObservationId = await checked("browser.screenshot-frame", () => freshObservation());
+  await checked("browser.coordinateClick-frame", () => bridge.call("browser.coordinateClick", { tabId, observationId: frameObservationId, x: frameRect.x + 230, y: frameRect.y + 52 }));
   await expectLocatorText({ testId: "semantic-result" }, /frame-coordinate:ok/);
   await checked("browser.click-frame-navigation", () => bridge.call("browser.click", { tabId, framePath: outerFrame, locator: { testId: "frame-navigate" } }));
   await checked("browser.waitFor-frame-navigation", () => bridge.call("browser.waitFor", { tabId, framePath: outerFrame, locator: { testId: "frame-alt-target" }, state: "visible", timeoutMs: 5000 }));
@@ -230,17 +265,18 @@ try {
   await checked("browser.navigate-kdesign-pro", () => bridge.call("browser.navigate", { tabId: childTabId, url: `${baseUrl}/#/pro/workbench` }));
   await checked("browser.waitForURL-kdesign-pro", () => bridge.call("browser.waitForURL", { tabId: childTabId, url: `${baseUrl}/#/pro/workbench`, match: "exact", timeoutMs: 5000 }));
   await checked("browser.click-pro-form", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-form" } }));
+  await checked("browser.fill-pro-form-subject", () => bridge.call("browser.fill", { tabId: childTabId, locator: { testId: "pro-form-subject" }, value: "Lingee 回归申请" }));
   await checked("browser.click-pro-form-submit", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-form-submit" } }));
-  assert.match(await bridge.call("browser.locatorTextContent", { tabId: childTabId, locator: { testId: "pro-form-result" } }), /申请已提交/);
+  await checked("browser.waitFor-pro-form-result", () => waitForLocatorText(childTabId, { testId: "pro-form-result" }, /申请已提交/));
   await checked("browser.click-pro-detail", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-detail" } }));
-  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /基础详情/);
+  await checked("browser.waitFor-pro-detail", () => waitForPageText(childTabId, /基础详情/));
   await checked("browser.click-pro-report", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-report" } }));
-  assert.match((await bridge.call("browser.readText", { tabId: childTabId, maxChars: 10000 })).text, /列表报表/);
+  await checked("browser.waitFor-pro-report", () => waitForPageText(childTabId, /列表报表/));
   await checked("browser.click-pro-login", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-nav-login" } }));
   await checked("browser.fill-pro-login-user", () => bridge.call("browser.fill", { tabId: childTabId, locator: { testId: "pro-login-user" }, value: "lingee-test-user" }));
   await checked("browser.fill-pro-login-password", () => bridge.call("browser.fill", { tabId: childTabId, locator: { testId: "pro-login-password" }, value: "fixture-only-value" }));
   await checked("browser.click-pro-login-submit", () => bridge.call("browser.click", { tabId: childTabId, locator: { testId: "pro-login-submit" } }));
-  assert.match(await bridge.call("browser.locatorTextContent", { tabId: childTabId, locator: { testId: "pro-login-result" } }), /模拟登录成功/);
+  await checked("browser.waitFor-pro-login-result", () => waitForLocatorText(childTabId, { testId: "pro-login-result" }, /模拟登录成功/));
   await checked("browser.activateTab-lab", () => bridge.call("browser.activateTab", { tabId }));
 
   for (const method of ["browser.historySearch", "browser.bookmarkSearch", "browser.downloadsSearch"]) {
@@ -254,6 +290,19 @@ try {
       }
     });
   }
+
+  if (childTabId != null) {
+    await checked("browser.closeTab-child-final", () => bridge.call("browser.closeTab", { tabId: childTabId }));
+    childTabId = undefined;
+  }
+  if (tabId != null) {
+    await checked("browser.closeTab-main-final", () => bridge.call("browser.closeTab", { tabId }));
+    tabId = undefined;
+  }
+  const ended = await checked("browser.endSession-resource-cleanup", () => bridge.call("browser.endSession", {}));
+  assert.equal(ended.resourceExportsRemoved, 1);
+  await assert.rejects(access(resourceExportPath));
+  resourceExportPath = undefined;
 
   const expected = new Set(["instances", ...STANDARD_CAPABILITIES.map(({ method }) => method).filter(Boolean)]);
   assert.deepEqual([...coveredMethods()].sort(), [...expected].sort());
@@ -279,6 +328,24 @@ async function checked(name, action) {
   checks.push(name);
   if (process.env.LINGEE_E2E_DEBUG === "1") process.stderr.write(`done ${name}\n`);
   return result;
+}
+async function freshObservation() {
+  const screenshot = await bridge.call("browser.screenshot", { tabId, format: "png" });
+  assert.equal(screenshot.coordinateSafe, true);
+  assert.ok(screenshot.observationId);
+  return screenshot.observationId;
+}
+async function executeConfirmedAction(name, summary, action, dataTypes = []) {
+  const intent = await checked(`${name}-prepare-intent`, () => bridge.call("browser.prepareActionIntent", { tabId, actionType: "upload", summary, dataTypes, action }));
+  assert.equal(intent.confirmationRequired, true);
+  await checked(`${name}-confirmation-gate`, async () => {
+    await assert.rejects(bridge.call("browser.executeActionIntent", { intentId: intent.intentId }), (error) => error.code === "ACTION_CONFIRMATION_REQUIRED" && error.details?.confirmationRequired === true);
+    return { confirmationRequired: true };
+  });
+  await checked(`${name}-confirm-intent`, () => bridge.call("browser.confirmActionIntent", { intentId: intent.intentId, decision: "approve" }));
+  const executed = await checked(name, () => bridge.call("browser.executeActionIntent", { intentId: intent.intentId }));
+  assert.equal(executed.intent.status, "consumed");
+  return executed.actionResult;
 }
 async function openFixtureTab(url, active) {
   let lastError;
@@ -354,6 +421,7 @@ async function waitForNewTab(existingTabIds, expectedUrl, timeoutMs = 10000) {
 }
 async function waitForComplete(id, timeoutMs = 10000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const tab = await bridge.call("browser.getTab", { tabId: id }); if (tab.status === "complete") return; await delay(50); } throw new Error(`Tab ${id} did not load`); }
 async function waitForPageText(id, pattern, timeoutMs = 10000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.readText", { tabId: id, maxChars: 30000 }); if (pattern.test(result.text)) return result; await delay(100); } throw new Error(`Page text did not match ${pattern}`); }
+async function waitForLocatorText(id, locator, pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.locatorTextContent", { tabId: id, locator, maxChars: 10000 }); if (pattern.test(String(result ?? ""))) return result; await delay(80); } throw new Error(`Locator text did not match ${pattern}`); }
 async function waitForVisible(id, locator, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { if (await bridge.call("browser.locatorIsVisible", { tabId: id, locator }, { timeoutMs: 5000 })) return true; await delay(80); } throw new Error(`Locator did not become visible: ${JSON.stringify(locator)}`); }
 async function expectText(pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.readText", { tabId, maxChars: 20000 }); if (pattern.test(result.text)) return result; await delay(80); } throw new Error(`Text did not match ${pattern}`); }
 async function expectLocatorText(locator, pattern, timeoutMs = 7000) { const end = Date.now() + timeoutMs; while (Date.now() < end) { const result = await bridge.call("browser.locatorTextContent", { tabId, locator, maxChars: 10000 }); if (pattern.test(String(result ?? ""))) return result; await delay(80); } throw new Error(`Locator text did not match ${pattern}`); }

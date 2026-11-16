@@ -19,11 +19,11 @@ async function readJson(relativePath) {
   return JSON.parse(await readFile(join(skillRoot, relativePath), "utf8"));
 }
 
-test("bundled KDesign workflows use the standard allowlisted control surface", async () => {
-  for (const relativePath of ["examples/kdesign-components.json", "examples/kdesign-pro-pages.json"]) {
+test("bundled KDesign and Kingdee business workflows use the standard allowlisted control surface", async () => {
+  for (const relativePath of ["examples/kdesign-components.json", "examples/kdesign-pro-pages.json", "examples/kingdee-business-page.json"]) {
     const document = validateWorkflowFile(await readJson(relativePath));
     assert.equal(document.schemaVersion, 1);
-    assert.equal(document.workflows.length, 4);
+    assert.ok(document.workflows.length >= 4);
     const result = await executeWorkflowCommand({ mode: "validate", file: join(skillRoot, relativePath) });
     assert.deepEqual(result.workflowIds, document.workflows.map(({ id }) => id));
   }

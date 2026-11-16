@@ -6,6 +6,10 @@ import { createTabOperationQueue } from "./tab-operation-queue.js";
 import { runLocatorQuery, validateLocatorQuery, validateLocatorQueryOptions } from "./locator-query.js";
 import { FRAME_WORLD_NAME, resolveFrameElement, validateFramePath } from "./frame-locator.js";
 import { applySelectOptions, inspectLocatedControl, normalizeSelections } from "./form-controls.js";
+import { normalizeViewportOptions, viewportResult } from "./viewport.js";
+import { createObservedResourceCatalog, OBSERVED_RESOURCE_LIMITS, resourceContentByteSize } from "./resource-catalog.js";
+import { createObservationState } from "./observation-state.js";
+import { normalizeDomSnapshot } from "./observation-evidence.js";
 
 const HOST_NAME = "org.universal_browser.bridge";
 const CDP_VERSION = "1.3";
@@ -41,6 +45,9 @@ const { attachedTabs, controlledTabs } = debuggerController;
 const monitoredDocumentsByTab = new Map();
 const neutralizedFrameIdsByTab = new Map();
 const cursorPositionsByTab = new Map();
+const viewportOverridesByTab = new Map();
+const resourceCatalogsByTab = new Map();
+const observationState = createObservationState();
 const jsDialogsByTab = new Map();
 const dialogOpenWaitersByTab = new Map();
 const dialogCloseWaitersByTab = new Map();
@@ -160,6 +167,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   monitoredDocumentsByTab.delete(tabId);
   neutralizedFrameIdsByTab.delete(tabId);
   cursorPositionsByTab.delete(tabId);
+  viewportOverridesByTab.delete(tabId);
+  resourceCatalogsByTab.delete(tabId);
+  observationState.clear(tabId);
   jsDialogsByTab.delete(tabId);
   dialogOpenWaitersByTab.delete(tabId);
   dialogCloseWaitersByTab.delete(tabId);
@@ -183,6 +193,9 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   monitoredDocumentsByTab.delete(removedTabId);
   neutralizedFrameIdsByTab.delete(removedTabId);
   cursorPositionsByTab.delete(removedTabId);
+  viewportOverridesByTab.delete(removedTabId);
+  resourceCatalogsByTab.delete(removedTabId);
+  observationState.clear(removedTabId);
   jsDialogsByTab.delete(removedTabId);
   dialogOpenWaitersByTab.delete(removedTabId);
   dialogCloseWaitersByTab.delete(removedTabId);
@@ -206,7 +219,11 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (controlledTabs.has(tabId)) void recoverVirtualCursor(tabId, "tab-activated");
 });
 chrome.webNavigation.onCommitted.addListener(({ tabId, frameId }) => {
+  if (frameId === 0) { resourceCatalogsByTab.delete(tabId); observationState.invalidate(tabId); }
   if (frameId === 0 && controlledTabs.has(tabId)) refreshForeignFrameMonitor(tabId);
+});
+chrome.windows.onBoundsChanged.addListener(async (window) => {
+  for (const tab of await chrome.tabs.query({ windowId: window.id })) observationState.invalidate(tab.id);
 });
 chrome.webNavigation.onDOMContentLoaded.addListener(({ tabId, frameId }) => {
   if (frameId === 0 && controlledTabs.has(tabId)) recoverVirtualCursor(tabId, "dom-content-loaded");
@@ -301,13 +318,17 @@ async function execute(method, params) {
       if (!result?.ok) throw codedError(result?.code || "DOWNLOAD_TARGET_INVALID", result?.message || "Download target is invalid");
       return result.value;
     }
+    case "_bridge.collectObservedResources": {
+      const tabId = await authorizedTab(assertOnlyParams(params, ["tabId", "resourceIds"]), settings);
+      return collectObservedResources(tabId, params.resourceIds);
+    }
     case "browser.getInfo":
       return {
         name: "Lingee Chrome Agent Bridge",
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", pointerInput: "bounded-pointer-v3", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1" },
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", pointerInput: "bounded-pointer-v3", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", formControls: "verified-fill-v3", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1", sessionClipboard: "host-memory-v1", viewportEmulation: "viewport-v1", observedResourceExport: "resource-export-v1", actionIntents: "action-intent-v1", observationFreshness: "observation-v1" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -415,15 +436,17 @@ async function execute(method, params) {
     case "browser.accessibilitySnapshot":
       return sendCdp(await authorizedTab(params, settings), "Accessibility.getFullAXTree", {});
     case "browser.screenshot": {
-      const tabId = await authorizedTab(params, settings);
-      const result = await sendCdp(tabId, "Page.captureScreenshot", {
-        format: params.format || "png",
-        quality: params.quality,
-        captureBeyondViewport: params.captureBeyondViewport === true,
-        fromSurface: true
-      });
-      return { data: result.data, mimeType: params.format === "jpeg" ? "image/jpeg" : "image/png" };
+      const tabId = await authorizedTab(assertOnlyParams(params, ["tabId", "format", "quality", "captureBeyondViewport"]), settings);
+      return captureScreenshotObservation(tabId, params);
     }
+    case "browser.getViewport":
+      return getViewport(await authorizedTab(assertOnlyParams(params, ["tabId"]), settings));
+    case "browser.setViewport":
+      return runControlledOperation(assertOnlyParams(params, ["tabId", "width", "height", "deviceScaleFactor", "mobile", "preserveOnSessionEnd"]), settings, (tabId) => setViewport(tabId, params));
+    case "browser.resetViewport":
+      return runControlledOperation(assertOnlyParams(params, ["tabId"]), settings, (tabId) => resetViewport(tabId));
+    case "browser.listObservedResources":
+      return listObservedResources(await authorizedTab(assertOnlyParams(params, ["tabId", "types", "mimeTypes", "maxResults"]), settings), params);
     case "browser.click":
       return runPointerOperation(params, settings, (tabId) => clickLocator(tabId, params.locator, params.button || "left", params.clickCount || 1, params.framePath));
     case "browser.fill":
@@ -469,40 +492,40 @@ async function execute(method, params) {
       });
     case "browser.mouseMove": {
       const x = number(params.x, 0); const y = number(params.y, 0);
-      return runPointerOperation(params, settings, async (tabId) => {
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "x", "y", "observationId"]), settings, async (tabId) => {
         await moveVirtualCursor(tabId, x, y);
         return { x, y };
-      });
+      }, { requireObservation: true });
     }
     case "browser.coordinateClick": {
       const x = number(params.x, 0); const y = number(params.y, 0); const button = params.button || "left"; const clickCount = Number(params.clickCount) || 1;
-      return runPointerOperation(params, settings, async (tabId) => {
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "x", "y", "button", "clickCount", "observationId"]), settings, async (tabId) => {
         const click = await clickCoordinates(tabId, x, y, button, clickCount);
         return { x, y, button, clickCount, ...click };
-      });
+      }, { requireObservation: true });
     }
     case "browser.drag":
-      return runPointerOperation(params, settings, (tabId) => drag(tabId, params));
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "from", "to", "steps", "observationId"]), settings, (tabId) => drag(tabId, params), { requireObservation: true });
     case "browser.wheel": {
       const x = number(params.x, 0); const y = number(params.y, 0);
-      return runPointerOperation(params, settings, async (tabId) => {
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "x", "y", "deltaX", "deltaY", "observationId"]), settings, async (tabId) => {
         const movement = await moveVirtualCursor(tabId, x, y);
         const deltaY = number(params.deltaY, 0);
         await requireVirtualCursor(tabId, x, y, "wheel", { deltaY, waitForPaint: true }, movement.documentId);
         await sendPointerCdp(tabId, "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: number(params.deltaX, 0), deltaY, button: "none" }, movement.documentId);
         await waitForCursorMotion(WHEEL_FEEDBACK_MIN_MS);
         return { ok: true };
-      });
+      }, { requireObservation: true });
     }
     case "browser.scroll": {
-      return runPointerOperation(params, settings, async (tabId) => {
+      return runPointerOperation(assertOnlyParams(params, ["tabId", "deltaX", "deltaY", "observationId"]), settings, async (tabId) => {
         const previous = cursorPositionsByTab.get(tabId);
         const deltaY = number(params.deltaY, 0);
         const rendered = await requireVirtualCursor(tabId, previous?.x, previous?.y, "wheel", { deltaY, waitForPaint: true }, previous?.documentId);
         const result = await evaluateAttachedValue(tabId, `(() => { window.scrollBy(${number(params.deltaX, 0)}, ${deltaY}); return {x: window.scrollX, y: window.scrollY}; })()`, rendered.documentId);
         await waitForCursorMotion(WHEEL_FEEDBACK_MIN_MS);
         return result;
-      });
+      }, { requireObservation: true });
     }
     case "browser.setFileInput":
       return runControlledOperation(params, settings, (tabId) => setFileInput(tabId, requireString(params.selector, "selector"), params.files, params.framePath));
@@ -579,8 +602,16 @@ async function handleJavaScriptDialog(params, settings) {
   }
 }
 
-function runPointerOperation(params, settings, operation) {
-  return runControlledOperation(params, settings, operation);
+function runPointerOperation(params, settings, operation, { requireObservation = false } = {}) {
+  return runControlledOperation(params, settings, async (tabId) => {
+    const observation = requireObservation ? await validateCoordinateObservation(tabId, params.observationId) : null;
+    const operationSequence = observationState.nextSequence(tabId);
+    const value = await operation(tabId);
+    observationState.invalidate(tabId);
+    return value && typeof value === "object"
+      ? { ...value, operationSequence, observationId: observation?.observationId || null }
+      : { value, operationSequence, observationId: observation?.observationId || null };
+  });
 }
 
 function runControlledOperation(params, settings, operation) {
@@ -611,6 +642,7 @@ async function detachDebugger(tabId) {
     return await debuggerController.detach(tabId);
   } finally {
     cursorPositionsByTab.delete(tabId);
+    observationState.invalidate(tabId);
     oopifSessionsByTab.delete(tabId);
     rejectOopifWaiters(tabId, "The tab debugger detached before the cross-process frame became available");
   }
@@ -940,6 +972,139 @@ function waitForCursorMotion(duration = CURSOR_SETTLE_MS) {
   return new Promise((resolve) => setTimeout(resolve, duration));
 }
 
+async function captureScreenshotObservation(tabId, params) {
+  const format = params.format || "png";
+  const captureBeyondViewport = params.captureBeyondViewport === true;
+  const result = await sendCdp(tabId, "Page.captureScreenshot", {
+    format,
+    quality: params.quality,
+    captureBeyondViewport,
+    fromSurface: true
+  });
+  const evidence = await currentObservationEvidence(tabId);
+  const observation = observationState.record(tabId, { ...evidence, coordinateSafe: format === "png" && !captureBeyondViewport });
+  return { data: result.data, mimeType: format === "jpeg" ? "image/jpeg" : "image/png", ...observation };
+}
+
+async function validateCoordinateObservation(tabId, observationId) {
+  if (typeof observationId !== "string" || !observationId) throw codedError("OBSERVATION_REQUIRED", "A fresh screenshot observationId is required for coordinate input");
+  return observationState.validate(tabId, observationId, await currentObservationEvidence(tabId));
+}
+
+async function currentObservationEvidence(tabId) {
+  const [frame, metrics, visualHash] = await Promise.all([
+    chrome.webNavigation.getFrame({ tabId, frameId: 0 }),
+    sendCdp(tabId, "Page.getLayoutMetrics", {}),
+    sendCdp(tabId, "DOMSnapshot.captureSnapshot", {
+      computedStyles: ["display", "visibility"],
+      includeDOMRects: true,
+      includePaintOrder: false
+    }).then((snapshot) => sha256(JSON.stringify(normalizeDomSnapshot(snapshot))))
+  ]);
+  if (!frame?.documentId) throw codedError("OBSERVATION_DOCUMENT_UNAVAILABLE", "The current top-level document identity is unavailable");
+  return { documentId: frame.documentId, viewportSignature: viewportSignature(metrics), visualHash };
+}
+
+function viewportSignature(metrics) {
+  const layout = metrics?.cssLayoutViewport || metrics?.layoutViewport || {};
+  const visual = metrics?.cssVisualViewport || metrics?.visualViewport || {};
+  const content = metrics?.cssContentSize || metrics?.contentSize || {};
+  return JSON.stringify({
+    layout: [layout.pageX, layout.pageY, layout.clientWidth, layout.clientHeight],
+    visual: [visual.offsetX, visual.offsetY, visual.pageX, visual.pageY, visual.clientWidth, visual.clientHeight, visual.scale],
+    content: [content.width, content.height]
+  });
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function getViewport(tabId) {
+  const metrics = await sendCdp(tabId, "Page.getLayoutMetrics", {});
+  return viewportResult(metrics, viewportOverridesByTab.get(tabId) || null);
+}
+
+async function setViewport(tabId, params) {
+  const next = normalizeViewportOptions(params);
+  const previous = viewportOverridesByTab.get(tabId) || null;
+  await sendCdp(tabId, "Emulation.setDeviceMetricsOverride", {
+    width: next.width,
+    height: next.height,
+    deviceScaleFactor: next.deviceScaleFactor,
+    mobile: next.mobile,
+    screenWidth: next.width,
+    screenHeight: next.height,
+    positionX: 0,
+    positionY: 0,
+    screenOrientation: { type: next.height >= next.width ? "portraitPrimary" : "landscapePrimary", angle: next.height >= next.width ? 0 : 90 }
+  });
+  viewportOverridesByTab.set(tabId, next);
+  observationState.invalidate(tabId);
+  try {
+    await recalibrateViewportCursor(tabId);
+  } catch (error) {
+    if (previous) {
+      await sendCdp(tabId, "Emulation.setDeviceMetricsOverride", { ...previous, screenWidth: previous.width, screenHeight: previous.height, positionX: 0, positionY: 0 });
+      viewportOverridesByTab.set(tabId, previous);
+    } else {
+      await sendCdp(tabId, "Emulation.clearDeviceMetricsOverride", {});
+      viewportOverridesByTab.delete(tabId);
+    }
+    throw error;
+  }
+  return { ...(await getViewport(tabId)), requested: next, preserveOnSessionEnd: params.preserveOnSessionEnd === true };
+}
+
+async function resetViewport(tabId) {
+  const changed = viewportOverridesByTab.has(tabId);
+  await sendCdp(tabId, "Emulation.clearDeviceMetricsOverride", {});
+  viewportOverridesByTab.delete(tabId);
+  observationState.invalidate(tabId);
+  await recalibrateViewportCursor(tabId);
+  return { ...(await getViewport(tabId)), changed };
+}
+
+async function listObservedResources(tabId, params) {
+  const tree = await sendCdp(tabId, "Page.getResourceTree", {});
+  const catalog = resourceCatalogsByTab.get(tabId) || createObservedResourceCatalog();
+  resourceCatalogsByTab.set(tabId, catalog);
+  return catalog.list(tree, { types: params.types, mimeTypes: params.mimeTypes, maxResults: params.maxResults });
+}
+
+async function collectObservedResources(tabId, resourceIds) {
+  const tree = await sendCdp(tabId, "Page.getResourceTree", {});
+  const catalog = resourceCatalogsByTab.get(tabId);
+  if (!catalog) throw codedError("RESOURCE_CATALOG_REQUIRED", "List observed resources before exporting them");
+  const selection = catalog.select(tree, resourceIds);
+  const resources = [];
+  let totalBytes = 0;
+  for (const resource of selection.resources) {
+    if (resource.contentSize != null && resource.contentSize > OBSERVED_RESOURCE_LIMITS.maxResourceBytes) {
+      throw codedError("RESOURCE_TOO_LARGE", "One selected resource exceeds the per-resource export limit", { resourceId: resource.resourceId, maxBytes: OBSERVED_RESOURCE_LIMITS.maxResourceBytes });
+    }
+    let result;
+    try {
+      result = await sendCdp(tabId, "Page.getResourceContent", { frameId: selection.frameId, url: resource.url });
+    } catch (error) {
+      throw codedError("RESOURCE_BODY_UNAVAILABLE", "A selected observed resource is no longer available in the current document cache", { resourceId: resource.resourceId, cause: error.code || "CDP_ERROR" });
+    }
+    const byteSize = resourceContentByteSize(result?.content, result?.base64Encoded === true);
+    if (byteSize > OBSERVED_RESOURCE_LIMITS.maxResourceBytes) throw codedError("RESOURCE_TOO_LARGE", "One selected resource exceeds the per-resource export limit", { resourceId: resource.resourceId, maxBytes: OBSERVED_RESOURCE_LIMITS.maxResourceBytes });
+    totalBytes += byteSize;
+    if (totalBytes > OBSERVED_RESOURCE_LIMITS.maxTotalBytes) throw codedError("RESOURCE_EXPORT_TOO_LARGE", "Selected resources exceed the total export limit", { maxBytes: OBSERVED_RESOURCE_LIMITS.maxTotalBytes });
+    resources.push({ ...resource, content: result.content, base64Encoded: result.base64Encoded === true, byteSize });
+  }
+  return { documentId: selection.documentId, pageUrl: selection.pageUrl, resources, totalBytes };
+}
+
+async function recalibrateViewportCursor(tabId) {
+  cursorPositionsByTab.delete(tabId);
+  await waitForCursorMotion(50);
+  return requireVirtualCursor(tabId, null, null, "ensure", { waitForPaint: true });
+}
+
 async function evaluateValue(tabId, expression) {
   const response = await sendCdp(tabId, "Runtime.evaluate", {
     expression,
@@ -965,6 +1130,15 @@ async function evaluateInContext(tabId, contextId, expression, returnByValue = t
 
 function throwPageException(details) {
   const description = details.exception?.description || details.text || "Page evaluation failed";
+  const actionabilityMarker = description.match(/LINGEE_ACTIONABILITY:(\{[^\n]+\})/);
+  if (actionabilityMarker) {
+    try {
+      const parsed = JSON.parse(actionabilityMarker[1]);
+      throw codedError(parsed.code || "INPUT_TARGET_OBSCURED", parsed.message || "The target did not become actionable", parsed.data);
+    } catch (error) {
+      if (error?.code) throw error;
+    }
+  }
   const marker = description.match(/LINGEE_FRAME:(\{[^\n]+\})/);
   if (marker) {
     try {
@@ -1216,15 +1390,43 @@ function mouseButtonMask(button) {
 
 async function fillLocator(tabId, locator, value, framePath) {
   const target = await locate(tabId, locator, framePath);
+  const before = await inspectControl(tabId, target.frameContext, locator);
+  if (!before.visible || !before.enabled || !before.editable) throw codedError("CONTROL_NOT_INTERACTABLE", "Fill requires a visible enabled editable control");
   await clickCoordinates(tabId, target.x, target.y, "left", 1, target.frameContext);
   await assertFrameContextFresh(tabId, target.frameContext);
-  await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
+  await delay(50);
+  await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: "a", code: "KeyA", modifiers: 2, commands: ["selectAll"] });
   await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
-  await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace" });
-  await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace" });
-  if (value) await sendPointerCdp(tabId, "Input.insertText", { text: value });
+  if (value) {
+    // Replace the selected value atomically. Clearing first can make React-style
+    // controlled inputs rerender between Backspace and insertText, losing the
+    // selection and appending the replacement to stale state.
+    await sendPointerCdp(tabId, "Input.insertText", { text: value });
+  } else {
+    await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace" });
+    await sendPointerCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace" });
+  }
+  const finalValue = await waitForFocusedEditableValue(tabId, target.frameContext, value);
   const { frameContext: _context, ...publicTarget } = target;
-  return { ...publicTarget, filled: true };
+  return { ...publicTarget, filled: true, valueLength: finalValue.length };
+}
+
+async function waitForFocusedEditableValue(tabId, frameContext, expected, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  let actual = null;
+  while (Date.now() <= deadline) {
+    await assertFrameContextFresh(tabId, frameContext);
+    actual = await evaluateInContext(tabId, frameContext.contextId, `(() => {
+      const element = document.activeElement;
+      return element && "value" in element ? String(element.value ?? "") : null;
+    })()`, true, frameContext.sessionId);
+    if (actual === expected) return actual;
+    await delay(25);
+  }
+  throw codedError("CONTROL_STATE_MISMATCH", "Fill final value verification failed", {
+    expectedLength: expected.length,
+    actualLength: typeof actual === "string" ? actual.length : null
+  });
 }
 
 async function setCheckedLocator(tabId, locator, checked, framePath) {
@@ -1322,8 +1524,13 @@ async function drag(tabId, params) {
 async function pressKey(tabId, key, modifiers) {
   const definition = keyDefinition(key);
   const modifierMask = modifiers.reduce((mask, value) => mask | ({ alt: 1, control: 2, meta: 4, shift: 8 }[String(value).toLowerCase()] || 0), 0);
-  await sendCdp(tabId, "Input.dispatchKeyEvent", { type: "keyDown", ...definition, modifiers: modifierMask });
-  await sendCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", ...definition, modifiers: modifierMask });
+  const eventDefinition = { ...definition };
+  // CDP treats the text field as insertable text even when Control/Alt/Meta is
+  // held. Strip it for shortcuts so Ctrl+A selects instead of inserting "a".
+  if (modifierMask & 7) delete eventDefinition.text;
+  const editingCommands = (modifierMask & 6) && String(key).toLowerCase() === "a" ? ["selectAll"] : undefined;
+  await sendCdp(tabId, "Input.dispatchKeyEvent", { type: editingCommands ? "rawKeyDown" : "keyDown", ...eventDefinition, modifiers: modifierMask, ...(editingCommands ? { commands: editingCommands } : {}) });
+  await sendCdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", ...eventDefinition, modifiers: modifierMask });
   return { key, modifiers };
 }
 
@@ -1704,7 +1911,7 @@ function domSnapshotExpression(params) {
   })()`;
 }
 
-function resolveLocator(locator, scroll = true) {
+async function resolveLocator(locator, scroll = true) {
   const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
   const implicitRole = (el) => el.getAttribute("role") || ({
     A: el.hasAttribute("href") ? "link" : null,
@@ -1725,8 +1932,45 @@ function resolveLocator(locator, scroll = true) {
   candidates = candidates.filter((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; });
   if (candidates.length !== 1) return candidates.length === 0 ? null : { ambiguous: true, count: candidates.length };
   const el = candidates[0]; if (scroll) el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
-  const r = el.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2, tag: el.localName, role: implicitRole(el), name: accessibleName(el) };
+  const deadline = performance.now() + 2000;
+  const nextFrame = () => Promise.race([
+    new Promise((resolve) => requestAnimationFrame(() => resolve())),
+    new Promise((resolve) => setTimeout(resolve, 80))
+  ]);
+  const rectKey = (rect) => [rect.left, rect.top, rect.width, rect.height].map((value) => Math.round(value * 2) / 2).join(":");
+  const hitPoint = (rect) => {
+    const xFractions = [0.5, 0.75, 0.25, 0.9, 0.1];
+    const yFractions = [0.5, 0.25, 0.75];
+    for (const yFraction of yFractions) for (const xFraction of xFractions) {
+      const x = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width * xFraction));
+      const y = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height * yFraction));
+      const hit = document.elementFromPoint(x, y);
+      if (hit === el || el.contains(hit)) return { x, y };
+    }
+    return null;
+  };
+  let previousRect = "";
+  let stableFrames = 0;
+  let lastRect = el.getBoundingClientRect();
+  while (performance.now() <= deadline) {
+    if (!el.isConnected) return null;
+    lastRect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    const currentRect = rectKey(lastRect);
+    stableFrames = currentRect === previousRect ? stableFrames + 1 : 0;
+    previousRect = currentRect;
+    const point = stableFrames >= 1 && style.pointerEvents !== "none" ? hitPoint(lastRect) : null;
+    if (point) return { ...point, tag: el.localName, role: implicitRole(el), name: accessibleName(el) };
+    await nextFrame();
+  }
+  const obstruction = document.elementFromPoint(
+    Math.max(0, Math.min(innerWidth - 1, lastRect.left + lastRect.width / 2)),
+    Math.max(0, Math.min(innerHeight - 1, lastRect.top + lastRect.height / 2))
+  );
+  const obstructionTag = obstruction?.localName || "none";
+  const error = new Error(`LINGEE_ACTIONABILITY:${JSON.stringify({ code: "INPUT_TARGET_OBSCURED", message: "Element matched the locator but did not become stable and receive pointer events", data: { obstructionTag } })}`);
+  error.name = "LINGEE_INPUT_TARGET_OBSCURED";
+  throw error;
 }
 
 function keyDefinition(key) {
@@ -1747,7 +1991,7 @@ function keyDefinition(key) {
 }
 
 function capabilityList() {
-  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
+  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
 }
 
 function requireTabId(params) {

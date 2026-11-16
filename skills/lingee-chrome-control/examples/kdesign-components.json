@@ -47,16 +47,14 @@
       ]
     },
     {
-      "id": "upload-file",
-      "description": "Set reviewed absolute files on an explicit KDesign file input and verify page status.",
+      "id": "upload-control-ready",
+      "description": "Verify the explicit KDesign file input before the caller starts the separate user-confirmed upload intent flow.",
       "defaults": {
         "INPUT_LOCATOR": { "css": "[data-testid='upload-field'] input[type='file']" },
-        "STATUS_LOCATOR": { "testId": "upload-state" },
-        "EXPECTED_STATUS": "已选择"
+        "EXPECTED_COUNT": 1
       },
       "steps": [
-        { "id": "set-file", "method": "browser.setFileInput", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR", "files": "$FILE_PATHS" } },
-        { "id": "verify-status", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$STATUS_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_STATUS" } }
+        { "id": "verify-input", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR" }, "expect": { "equals": "$EXPECTED_COUNT" } }
       ]
     }
   ]

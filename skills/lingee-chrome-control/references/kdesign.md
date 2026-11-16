@@ -10,6 +10,7 @@ The maintained regression baseline is KDesign `1.8.74` plus the inspected KDesig
 - [MCP and CLI equivalence](#mcp-and-cli-equivalence)
 - [KDesign component patterns](#kdesign-component-patterns)
 - [KDesign Pro page patterns](#kdesign-pro-page-patterns)
+- [Kingdee business-page lifecycle](#kingdee-business-page-lifecycle)
 - [Workflow runner](#workflow-runner)
 - [Failure handling](#failure-handling)
 
@@ -21,6 +22,7 @@ The maintained regression baseline is KDesign `1.8.74` plus the inspected KDesig
 4. Use `browser.selectOption` only for a native HTML `<select>`. KDesign `Select`, `Cascader`, `TreeSelect`, `CityPicker`, and similar composite controls require visible trigger/panel/option clicks.
 5. After every action, verify a visible value, selected state, output text, URL, row count, modal state, or other deterministic result. A successful click acknowledgement alone is not completion.
 6. Do not retry `POINTER_INPUT_TIMEOUT` blindly. Inspect the original tab and any newly opened tabs. For a disposable test tab, a runner may close that tab, create a fresh controlled test tab, and restart the current idempotent case; never apply that recovery to an unknown business mutation.
+7. For Kingdee business controls rendered as generic `div` elements, combine a stable CSS scope with exact visible text, for example `{ "css": "div", "text": "新增", "exact": true }`. A bare text locator searches the semantic-interactive candidate set and may intentionally exclude generic containers. Verify the combined locator is unique before acting; do not fall back to coordinates when this structured combination works.
 
 ## MCP and CLI equivalence
 
@@ -53,7 +55,7 @@ Keep one `UNIVERSAL_BROWSER_INSTANCE_ID` and one non-secret `UNIVERSAL_BROWSER_S
 
 ### Input, Search, InputNumber, Stepper
 
-- Use `browser.fill` for ordinary controlled inputs and verify the final visible/state value.
+- Use `browser.fill` for ordinary controlled inputs. Version 0.1.32 atomically replaces existing controlled-input text and verifies the final value before reporting success.
 - Use `browser.press` with `Enter` for Search only after focusing or filling the intended search input.
 - If a formatted numeric input clamps or reformats intermediate values, read the final value/state before deciding whether a retry is safe. Do not use page script to assign the value.
 - Stepper increase/decrease controls are visible pointer actions; click the uniquely scoped step button and verify the numeric state.
@@ -105,7 +107,7 @@ If the installed KDesign version exposes a different panel class, re-read the DO
 
 ### Slider, SplitPanel, drag targets
 
-- Use `browser.drag` with unique locator endpoints when both endpoints are representable.
+- Use `browser.drag` with unique locator endpoints when both endpoints are representable, but still include a fresh viewport-PNG `observationId` because drag changes page state through coordinates.
 - If geometry is unavoidable, take a fresh screenshot and use current viewport points only.
 - Verify the changed value or panel size/fold state after the drag or fold click.
 
@@ -122,8 +124,8 @@ If the installed KDesign version exposes a different panel class, re-read the DO
 
 ### Upload and FileChooser
 
-- For an explicit CSS file input, use `browser.setFileInput` with reviewed absolute regular-file paths.
-- For a dynamic/hidden chooser, register `browser.waitForFileChooser` before clicking, then call `browser.setFileChooserFiles` with the returned chooser ID.
+- For an explicit CSS file input, prepare an `upload` action intent whose exact nested action is `browser.setFileInput` with reviewed absolute regular-file paths; confirm and execute the intent.
+- For a dynamic/hidden chooser, register `browser.waitForFileChooser` before clicking, then prepare, confirm, and execute an `upload` action intent containing `browser.setFileChooserFiles` and the returned chooser ID.
 - Verify only file basenames or page status; never read file contents unless separately authorized.
 
 ### Signature, ImageCropper, Carousel, Tree, Tag
@@ -135,7 +137,7 @@ If the installed KDesign version exposes a different panel class, re-read the DO
 
 ### Tooltip and hover-only behavior
 
-There is no framework-specific hover RPC. Prefer structural/accessibility verification. If the user must visibly demonstrate hover behavior, use a fresh screenshot and `browser.mouseMove` with current viewport coordinates, then verify the tooltip; never reuse coordinates after layout or navigation changes.
+There is no framework-specific hover RPC. Prefer structural/accessibility verification. If the user must visibly demonstrate hover behavior, use a fresh viewport PNG and pass its `observationId` to `browser.mouseMove` with current coordinates, then verify the tooltip; capture a new observation for every later coordinate action.
 
 ## KDesign Pro page patterns
 
@@ -181,6 +183,29 @@ For tree/list pages, select the organization node before querying and verify tha
 - If login, MFA, CAPTCHA, or tenant choice is required, stop for the user to complete it interactively.
 - Test fixtures may use explicitly non-secret synthetic values; production authentication may not.
 
+## Kingdee business-page lifecycle
+
+Many Kingdee/iERP pages combine KDesign-derived widgets with application-owned generic `div` controls. They remain controllable through the standard Locator surface; they do not justify a framework-specific RPC, screenshot, coordinate, raw CDP, or page-script fallback.
+
+### Discovery and disambiguation
+
+- A generic toolbar action can be located by stable CSS plus exact visible text: `{ "css": "div", "text": "新增", "exact": true }`. Call `browser.locatorCount` first and require exactly one result.
+- If the same application name appears in a navigation tree and a card, scope the card by its stable container or use its complete composite visible text. Never click an ambiguous short label.
+- Leaf text in a custom confirmation overlay can be scoped with `*:not(:has(*))` plus exact text after verifying uniqueness. Do not nest `:has()` inside another `:has()` because Chrome rejects nested relational selectors.
+- A split toolbar button may expose its primary action and dropdown arrow as sibling children. Scope the stable split-button root, click the direct arrow child, wait for the menu item, then locate that item by exact text. Verify the menu action's resulting document state.
+- Prefer a real row checkbox with `browser.setChecked`. Verify the selected-row summary or enabled toolbar state before issuing a record action.
+
+### Create, modify, submit, audit, reverse-audit, delete
+
+1. Read the page and uniquely locate `新增`; click once and wait for the edit form.
+2. Fill code/name/remark inputs with `browser.fill`. Version 0.1.32 uses the browser's native `selectAll` editing command, inserts the replacement atomically, and verifies the final focused editable value. A returned `valueLength` is evidence that the exact requested value was reached; `CONTROL_STATE_MISMATCH` is a hard failure.
+3. Save once, then verify the visible success state and read the record back from the page.
+4. For submit and audit, verify the current record identity and status immediately before each click, then verify the next status. Do not infer success from a click acknowledgement.
+5. For reverse-audit, select exactly one row, open the scoped audit split menu, choose `反审核`, and verify the status changed to the expected editable/draft state.
+6. For delete, select exactly one reviewed test record and open the page confirmation overlay. Prepare a `delete` action intent whose nested action is the exact `browser.click` on the unique confirm locator. Present the returned origin, summary, data types, risk class, and expiry. Only after explicit user approval call `browser.confirmActionIntent` and `browser.executeActionIntent`; then verify both code and name are absent. Never put confirm/execute into an unattended workflow.
+
+The bundled `examples/kingdee-business-page.json` contains reusable standard-control workflows for generic div actions, verified controlled-input replacement, split-button menus, row selection, and deletion-intent preparation. All locators are examples and must be re-read and overridden for the deployed page.
+
 ## Workflow runner
 
 The bundled runner validates method names before it connects. It cannot call raw CDP or unknown methods.
@@ -188,6 +213,7 @@ The bundled runner validates method names before it connects. It cannot call raw
 ```powershell
 node "<skill-root>/scripts/run-workflow.mjs" list "<skill-root>/examples/kdesign-components.json"
 node "<skill-root>/scripts/run-workflow.mjs" validate "<skill-root>/examples/kdesign-components.json"
+node "<skill-root>/scripts/run-workflow.mjs" validate "<skill-root>/examples/kingdee-business-page.json"
 node "<skill-root>/scripts/run-workflow.mjs" run "<skill-root>/examples/kdesign-components.json" --workflow custom-select --tab-id 123
 ```
 

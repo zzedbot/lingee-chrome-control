@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { verifyChromeRuntime } from "../scripts/chrome-e2e-preflight.mjs";
 import { VERSION } from "../src/version.mjs";
 
-const compatibility = { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", virtualCursor: "overlay-v13", locatorQueries: "codex-read-v1", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1" };
-const capabilities = ["virtualCursor", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs"];
+const compatibility = { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", virtualCursor: "overlay-v13", locatorQueries: "codex-read-v1", formControls: "verified-fill-v3", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1", sessionClipboard: "host-memory-v1", viewportEmulation: "viewport-v1", observedResourceExport: "resource-export-v1", actionIntents: "action-intent-v1", observationFreshness: "observation-v1" };
+const capabilities = ["virtualCursor", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs"];
 function fixture(browser, connected = true, hostVersion = VERSION) {
   const calls = [];
   return {

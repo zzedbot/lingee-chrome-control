@@ -186,7 +186,7 @@ try {
   });
   if (!requestedComponent) await recycleControlledTab("#/kdesign/rate", "data-entry-second-half");
   await componentInteraction("rate", async () => {
-    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='rate-control'] .kd-rate-item:nth-child(5)" } });
+    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='rate-control'] .kd-rate-item:nth-child(5) .kd-rate-icon-second" } });
     await expectLocatorText({ testId: "component-state-rate" }, /rate:5/);
   });
   await componentInteraction("search", async () => {
@@ -230,7 +230,10 @@ try {
   });
   await componentInteraction("upload", async () => {
     const uploadPath = path.join(repoRoot, "test", "web-fixture", "README.md");
-    await bridge.call("browser.setFileInput", { tabId, selector: "[data-testid='upload-control'] input[type='file']", files: [uploadPath] });
+    await executeConfirmedUpload("Upload the KDesign fixture README", {
+      method: "browser.setFileInput",
+      params: { selector: "[data-testid='upload-control'] input[type='file']", files: [uploadPath] }
+    });
     await expectLocatorText({ testId: "component-state-upload" }, /file:README\.md/);
   });
   }
@@ -353,7 +356,7 @@ try {
   }
   }
 
-  if (requestedBatch === "all") {
+  if (requestedBatch === "all" && !requestedComponent && !requestedProPage) {
     const expectedComponentInteractions = Object.entries(COMPONENT_TEST_MATRIX).filter(([, testCase]) => testCase.tier === "interaction").map(([id]) => id);
     const expectedProInteractions = Object.entries(PRO_TEST_MATRIX).filter(([, testCase]) => testCase.tier === "interaction").map(([id]) => id);
     assert.deepEqual([...interactedComponents].sort(), expectedComponentInteractions.sort(), "every interactive KDesign component must complete its deep interaction");
@@ -382,6 +385,14 @@ try {
 }
 
 async function checked(name, action) { stage = name; if (process.env.LINGEE_E2E_DEBUG === "1") process.stderr.write(`start ${name}\n`); const result = await action(); checks.push(name); if (process.env.LINGEE_E2E_DEBUG === "1") process.stderr.write(`done ${name}\n`); return result; }
+async function executeConfirmedUpload(summary, action) {
+  const intent = await bridge.call("browser.prepareActionIntent", { tabId, actionType: "upload", summary, dataTypes: ["text/markdown"], action });
+  assert.equal(intent.confirmationRequired, true);
+  await bridge.call("browser.confirmActionIntent", { intentId: intent.intentId, decision: "approve" });
+  const executed = await bridge.call("browser.executeActionIntent", { intentId: intent.intentId });
+  assert.equal(executed.intent.status, "consumed");
+  return executed.actionResult;
+}
 async function componentInteraction(id, action) { if (requestedComponent && requestedComponent !== id) return; await navigateTo(`#/kdesign/${id}`); await waitForVisible({ testId: `specimen-${id}` }, 7000); await delay(180); await interactionWithFreshTabRecovery(`interaction:${id}`, `#/kdesign/${id}`, { testId: `specimen-${id}` }, action); interactedComponents.add(id); const result = componentResults.find((item) => item.id === id); if (result) result.interaction = true; await assertNoFixtureErrors(`interaction:${id}`); }
 async function proInteraction(id, action) { if (requestedProPage && requestedProPage !== id) return; await navigateTo(`#/pro/${id}`); await waitForVisible({ testId: `pro-template-${id}` }, 7000); await delay(180); await interactionWithFreshTabRecovery(`pro-interaction:${id}`, `#/pro/${id}`, { testId: `pro-template-${id}` }, action); interactedPro.add(id); const result = proResults.find((item) => item.id === id); if (result) result.interaction = true; await assertNoFixtureErrors(`pro-interaction:${id}`); }
 async function interactionWithFreshTabRecovery(name, hash, readyLocator, action) {

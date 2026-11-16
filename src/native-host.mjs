@@ -10,6 +10,9 @@ import { assertCdpAllowed, assertUrlAllowed, isHostAllowed, loadPolicy, normaliz
 import { HOST_NAME, runtimeDirectory } from "./runtime-paths.mjs";
 import { VERSION } from "./version.mjs";
 import { createSessionManager } from "./session-manager.mjs";
+import { createSessionClipboard } from "./session-clipboard.mjs";
+import { createResourceExporter } from "./resource-export.mjs";
+import { createActionIntentManager } from "./action-intents.mjs";
 
 const instanceId = crypto.randomUUID();
 const token = crypto.randomBytes(32).toString("base64url");
@@ -22,6 +25,10 @@ let shuttingDown = false;
 let descriptorPath;
 let ipcEndpoint;
 const sessionManager = createSessionManager();
+const sessionClipboard = createSessionClipboard();
+const resourceExporter = createResourceExporter();
+const actionIntents = createActionIntentManager();
+const temporaryViewportsBySession = new Map();
 const sessionCleanupTimer = setInterval(() => {
   for (const sessionId of sessionManager.expiredSessions()) void endBrowserSession(sessionId).catch(logError);
 }, 30000);
@@ -30,7 +37,8 @@ const MUTATING_TAB_METHODS = new Set([
   "browser.closeTab", "browser.activateTab", "browser.detachTab", "browser.navigate", "browser.back", "browser.forward", "browser.reload",
   "browser.click", "browser.fill", "browser.press", "browser.type", "browser.mouseMove", "browser.coordinateClick", "browser.drag", "browser.wheel", "browser.scroll", "browser.setFileInput", "browser.handleDialog", "browser.expectNavigation",
   "browser.check", "browser.uncheck", "browser.setChecked", "browser.selectOption", "browser.doubleClick", "browser.pressSequentially",
-  "browser.waitForDownload", "browser.downloadMedia", "browser.waitForFileChooser", "browser.setFileChooserFiles"
+  "browser.waitForDownload", "browser.downloadMedia", "browser.waitForFileChooser", "browser.setFileChooserFiles",
+  "browser.setViewport", "browser.resetViewport", "browser.exportObservedResources"
 ]);
 const TAB_CREATING_METHODS = new Set(["browser.click", "browser.coordinateClick", "browser.doubleClick", "browser.press", "browser.expectNavigation", "browser.waitForDownload", "browser.downloadMedia"]);
 
@@ -104,7 +112,14 @@ async function start() {
     nativeHostName: HOST_NAME,
     startedAt: new Date().toISOString()
   };
-  await fsp.writeFile(descriptorPath, `${JSON.stringify(descriptor, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  const pendingDescriptorPath = `${descriptorPath}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fsp.writeFile(pendingDescriptorPath, `${JSON.stringify(descriptor, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    await fsp.rename(pendingDescriptorPath, descriptorPath);
+  } catch (error) {
+    await fsp.rm(pendingDescriptorPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 function handleExtensionMessage(message) {
@@ -130,7 +145,7 @@ async function handleRpc(request) {
   return { jsonrpc: "2.0", id: request.id, result };
 }
 
-async function dispatch(method, params, sessionId) {
+async function dispatch(method, params, sessionId, context = {}) {
   if (method.startsWith("_bridge.")) throw coded("METHOD_NOT_FOUND", `Unknown browser method: ${method}`);
   if (method === "bridge.getInfo") {
     return {
@@ -150,11 +165,56 @@ async function dispatch(method, params, sessionId) {
     const lease = sessionManager.get(tabId);
     return lease ? { tabId: lease.tabId, temporary: lease.temporary, marker: lease.marker, createdAt: lease.createdAt, expiresAt: lease.expiresAt, ownedByCurrentSession: lease.sessionId === sessionId } : null;
   }
-  if (method === "browser.transferTab") { assertOnlyHostParams(params, ["tabId", "targetSessionId"]); return sessionManager.transfer(hostTabId(params.tabId), sessionId, params.targetSessionId); }
+  if (method === "browser.transferTab") {
+    assertOnlyHostParams(params, ["tabId", "targetSessionId"]);
+    const tabId = hostTabId(params.tabId);
+    const result = sessionManager.transfer(tabId, sessionId, params.targetSessionId);
+    transferTemporaryViewport(tabId, sessionId, params.targetSessionId);
+    return result;
+  }
   if (method === "browser.markHandoff") { assertOnlyHostParams(params, ["tabId"]); return sessionManager.mark(hostTabId(params.tabId), sessionId, "handoff"); }
   if (method === "browser.markDeliverable") { assertOnlyHostParams(params, ["tabId"]); return sessionManager.mark(hostTabId(params.tabId), sessionId, "deliverable"); }
   if (method.startsWith("policy.")) return handlePolicy(method, params);
+  if (method === "browser.sessionClipboardWrite") {
+    assertOnlyHostParams(params, ["items"]);
+    const policy = await loadPolicy();
+    if (!policy.allowSessionClipboardWrite) throw coded("SESSION_CLIPBOARD_WRITE_APPROVAL_REQUIRED", "Browser session clipboard write access is disabled by policy");
+    return sessionClipboard.write(sessionId, params.items);
+  }
+  if (method === "browser.sessionClipboardRead") {
+    assertOnlyHostParams(params, ["mimeTypes"]);
+    const policy = await loadPolicy();
+    if (!policy.allowSessionClipboardRead) throw coded("SESSION_CLIPBOARD_READ_APPROVAL_REQUIRED", "Browser session clipboard read access is disabled by policy");
+    return sessionClipboard.read(sessionId, params.mimeTypes);
+  }
+  if (method === "browser.sessionClipboardClear") {
+    assertOnlyHostParams(params, []);
+    const policy = await loadPolicy();
+    if (!policy.allowSessionClipboardWrite) throw coded("SESSION_CLIPBOARD_WRITE_APPROVAL_REQUIRED", "Browser session clipboard write access is disabled by policy");
+    return sessionClipboard.clear(sessionId);
+  }
   if (!extensionInfo) throw coded("EXTENSION_NOT_READY", "Chrome extension has not completed the native messaging handshake");
+
+  if (method === "browser.prepareActionIntent") {
+    assertOnlyHostParams(params, ["tabId", "actionType", "summary", "dataTypes", "action"]);
+    const tabId = hostTabId(params.tabId);
+    sessionManager.assertOwner(tabId, sessionId);
+    const policy = await loadPolicy();
+    const tab = await sendToExtension("browser.getTab", { tabId });
+    assertTabUrlAllowed(policy, tab.url);
+    return actionIntents.prepare(sessionId, { ...params, tabId, targetOrigin: new URL(tab.url).origin });
+  }
+  if (method === "browser.confirmActionIntent") {
+    assertOnlyHostParams(params, ["intentId", "decision", "rememberForSession"]);
+    return actionIntents.confirm(sessionId, params);
+  }
+  if (method === "browser.executeActionIntent") {
+    assertOnlyHostParams(params, ["intentId"]);
+    const consumed = actionIntents.consume(sessionId, params.intentId);
+    sessionManager.assertOwner(consumed.intent.tabId, sessionId);
+    const actionResult = await dispatch(consumed.action.method, { tabId: consumed.intent.tabId, ...consumed.action.params }, sessionId, { intentAuthorized: true });
+    return { intent: consumed.intent, actionResult };
+  }
 
   if (method === "browser.openTab") sessionManager.touch(sessionId);
   if (method === "browser.groupTabs") {
@@ -172,7 +232,10 @@ async function dispatch(method, params, sessionId) {
   if (method === "browser.expectNavigation" && params.action?.method === "browser.navigate") {
     assertUrlAllowed(policy, params.action?.params?.url || "about:blank");
   }
-  if (["browser.setFileInput", "browser.setFileChooserFiles"].includes(method)) await validateUploadFiles(params.files);
+  if (["browser.setFileInput", "browser.setFileChooserFiles"].includes(method)) {
+    if (context.intentAuthorized !== true) throw coded("ACTION_INTENT_REQUIRED", "File upload must use a confirmed upload action intent", { actionType: "upload", confirmationRequired: true });
+    await validateUploadFiles(params.files);
+  }
 
   if (method === "browser.listTabs") {
     const tabs = await sendToExtension(method, params);
@@ -199,6 +262,14 @@ async function dispatch(method, params, sessionId) {
     }
     for (const frame of resolved?.frames || []) assertTabUrlAllowed(policy, frame.url);
   }
+  if (method === "browser.exportObservedResources") {
+    assertOnlyHostParams(params, ["tabId", "resourceIds"]);
+    if (!Array.isArray(params.resourceIds) || params.resourceIds.length < 1 || params.resourceIds.length > 20) throw coded("RESOURCE_SELECTION_INVALID", "resourceIds must contain 1 to 20 items");
+    const payload = await sendToExtension("_bridge.collectObservedResources", { tabId: params.tabId, resourceIds: params.resourceIds }, 60000);
+    assertTabUrlAllowed(policy, payload?.pageUrl);
+    for (const resource of payload?.resources || []) assertTabUrlAllowed(policy, resource.url);
+    return resourceExporter.exportArchive(sessionId, payload);
+  }
   if (method === "browser.downloadMedia") {
     const target = await sendToExtension("_bridge.resolveDownloadTarget", { tabId: params.tabId, locator: params.locator, framePath: params.framePath });
     assertDownloadUrlAllowed(policy, target?.url);
@@ -219,13 +290,25 @@ async function dispatch(method, params, sessionId) {
     for (const tabId of created?.tabIds || []) sessionManager.acquire(tabId, sessionId, { temporary: true });
   }
   if (actionError) throw actionError;
+  if (method === "browser.setViewport") {
+    if (params.preserveOnSessionEnd === true) forgetTemporaryViewport(params.tabId);
+    else rememberTemporaryViewport(sessionId, params.tabId);
+  }
+  if (method === "browser.resetViewport") forgetTemporaryViewport(params.tabId);
   if (method === "browser.closeTab" && params.tabId != null) sessionManager.forgetTab(params.tabId);
+  if (method === "browser.closeTab" && params.tabId != null) forgetTemporaryViewport(params.tabId);
   if (method === "browser.waitForURL") assertTabUrlAllowed(policy, result?.url);
   if (method === "browser.waitForLoadState") assertTabUrlAllowed(policy, result?.url);
   if (method === "browser.expectNavigation") assertTabUrlAllowed(policy, result?.navigation?.toUrl || result?.navigation?.url);
   if (method === "browser.waitForDownload" || method === "browser.downloadMedia") assertDownloadUrlAllowed(policy, result?.download?.url);
   if (method === "browser.getConsoleLogs" && Array.isArray(result?.logs)) {
     result.logs = result.logs.map((entry) => ({ ...entry, url: sanitizeSourceUrl(policy, entry.url) }));
+  }
+  if (method === "browser.listObservedResources" && Array.isArray(result?.resources)) {
+    const resources = result.resources.filter((resource) => {
+      try { assertTabUrlAllowed(policy, resource.url); return true; } catch { return false; }
+    });
+    result = { ...result, resources, resourceCount: resources.length, omittedUnapproved: result.resources.length - resources.length, truncated: result.truncated === true || resources.length !== result.resources.length };
   }
   return result;
 }
@@ -257,6 +340,20 @@ function assertDownloadUrlAllowed(policy, value) {
 
 async function endBrowserSession(sessionId) {
   const leases = sessionManager.releaseSession(sessionId);
+  const clipboard = sessionClipboard.releaseSession(sessionId);
+  const resourceExports = await resourceExporter.releaseSession(sessionId);
+  const actionIntentCleanup = actionIntents.releaseSession(sessionId);
+  const viewportTabs = releaseTemporaryViewports(sessionId);
+  const viewportReset = [];
+  const viewportResetFailed = [];
+  for (const tabId of viewportTabs) {
+    try {
+      await sendToExtension("browser.resetViewport", { tabId });
+      viewportReset.push(tabId);
+    } catch (error) {
+      viewportResetFailed.push({ tabId, code: error.code || "VIEWPORT_RESET_FAILED" });
+    }
+  }
   const closed = [];
   const preserved = [];
   for (const lease of leases) {
@@ -270,7 +367,33 @@ async function endBrowserSession(sessionId) {
       preserved.push({ ...lease, reason: error.code === "TAB_NOT_FOUND" ? "already-closed" : "cleanup-failed" });
     }
   }
-  return { closed, preserved };
+  return { closed, preserved, clipboardCleared: clipboard.cleared, resourceExportsRemoved: resourceExports.removed, actionIntentsCleared: actionIntentCleanup.intentCount, rememberedActionApprovalsCleared: actionIntentCleanup.rememberedApprovalCount, viewportReset, viewportResetFailed };
+}
+
+function rememberTemporaryViewport(sessionId, tabId) {
+  const set = temporaryViewportsBySession.get(sessionId) || new Set();
+  set.add(tabId);
+  temporaryViewportsBySession.set(sessionId, set);
+}
+
+function forgetTemporaryViewport(tabId) {
+  for (const [sessionId, tabs] of temporaryViewportsBySession) {
+    tabs.delete(tabId);
+    if (!tabs.size) temporaryViewportsBySession.delete(sessionId);
+  }
+}
+
+function transferTemporaryViewport(tabId, sourceSessionId, targetSessionId) {
+  const source = temporaryViewportsBySession.get(sourceSessionId);
+  if (!source?.delete(tabId)) return;
+  if (!source.size) temporaryViewportsBySession.delete(sourceSessionId);
+  rememberTemporaryViewport(targetSessionId, tabId);
+}
+
+function releaseTemporaryViewports(sessionId) {
+  const tabs = [...(temporaryViewportsBySession.get(sessionId) || [])];
+  temporaryViewportsBySession.delete(sessionId);
+  return tabs;
 }
 
 function collectFramePaths(params) {
@@ -315,6 +438,16 @@ async function handlePolicy(method, params) {
   }
   if (method === "policy.setSensitiveMetadata") {
     policy.allowSensitiveMetadata = params.enabled === true;
+    return savePolicy(policy);
+  }
+  if (method === "policy.setSessionClipboardRead") {
+    assertOnlyHostParams(params, ["enabled"]);
+    policy.allowSessionClipboardRead = params.enabled === true;
+    return savePolicy(policy);
+  }
+  if (method === "policy.setSessionClipboardWrite") {
+    assertOnlyHostParams(params, ["enabled"]);
+    policy.allowSessionClipboardWrite = params.enabled === true;
     return savePolicy(policy);
   }
   if (method === "policy.allowCdpMethod") {
@@ -418,6 +551,7 @@ async function shutdown(exitCode) {
   pending.clear();
   for (const socket of sockets) socket.destroy();
   await new Promise((resolve) => server.close(resolve));
+  await resourceExporter.releaseAll().catch(() => {});
   if (descriptorPath) await fsp.rm(descriptorPath, { force: true }).catch(() => {});
   if (ipcEndpoint && process.platform !== "win32") await fsp.rm(ipcEndpoint, { force: true }).catch(() => {});
   process.exit(exitCode);

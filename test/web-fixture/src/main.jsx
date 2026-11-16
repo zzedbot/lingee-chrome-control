@@ -8,6 +8,8 @@ import "./styles.css";
 
 const cases = [
   ["observation", "观察", "readText / domSnapshot / accessibilitySnapshot / screenshot"],
+  ["viewport", "响应式视口", "getViewport / setViewport / resetViewport"],
+  ["resources", "受控资源导出", "当前文档资源清单 / 显式选择临时 ZIP"],
   ["semantic-input", "语义输入", "click / fill / press / type"],
   ["pointer", "指针", "mouseMove / coordinateClick / drag"],
   ["scroll", "滚动", "wheel / scroll"],
@@ -62,6 +64,9 @@ function CapabilityLab() {
   const [wheel, setWheel] = useState(0);
   const [asyncReady, setAsyncReady] = useState(false);
   const [frameVisible, setFrameVisible] = useState(true);
+  const [businessState, setBusinessState] = useState("等待业务操作");
+  const [businessSelected, setBusinessSelected] = useState(false);
+  const [auditMenuVisible, setAuditMenuVisible] = useState(false);
   const drag = useRef(null);
   const frame = useRef(null);
   const chooser = useRef(null);
@@ -116,6 +121,21 @@ function CapabilityLab() {
         </div>
         <output data-testid="semantic-result">{status};fill={text};type={typed};key={key};checked={String(checked)};select={choice}</output>
         <div className="ambiguous"><button>同名按钮</button><button>同名按钮</button></div>
+      </Section>
+
+      <Section title="金蝶通用业务控件" id="kingdee-business-controls">
+        <p>模拟缺少 ARIA 角色的通用 div 工具栏、分裂按钮和表格行选择，用于验证 CSS + 精确文本定位。</p>
+        <div className="generic-business-toolbar" data-testid="generic-business-toolbar">
+          <div className="generic-business-action" onClick={() => setBusinessState("新增:ok")}>新增</div>
+          <div className="generic-business-action" onClick={() => setBusinessState("提交:ok")}>提交</div>
+          <div className="generic-business-split">
+            <div className="generic-business-action" onClick={() => setBusinessState("审核:ok")}>审核</div>
+            <div className="generic-business-arrow" onClick={() => setAuditMenuVisible((visible) => !visible)}>⌄</div>
+          </div>
+          <label><input data-testid="generic-business-row-check" type="checkbox" checked={businessSelected} onChange={(event) => setBusinessSelected(event.target.checked)} />选择测试行</label>
+        </div>
+        {auditMenuVisible ? <div className="generic-business-menu"><div className="generic-business-menu-item" onClick={() => { setBusinessState("反审核:ok"); setAuditMenuVisible(false); }}>反审核</div></div> : null}
+        <output data-testid="generic-business-result">{businessState};selected={String(businessSelected)};menu={String(auditMenuVisible)}</output>
       </Section>
 
       <Section title="坐标、拖拽和滚轮" id="pointer">

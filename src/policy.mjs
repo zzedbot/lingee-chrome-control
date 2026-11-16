@@ -5,6 +5,8 @@ import { policyPath } from "./runtime-paths.mjs";
 const DEFAULT_POLICY = Object.freeze({
   allowAll: false,
   allowSensitiveMetadata: false,
+  allowSessionClipboardRead: false,
+  allowSessionClipboardWrite: false,
   allowedHosts: ["localhost", "127.0.0.1", "::1"],
   blockedHosts: [],
   allowedCdpMethods: [
@@ -75,6 +77,8 @@ function normalizePolicy(policy = {}) {
   return {
     allowAll: policy.allowAll === true,
     allowSensitiveMetadata: policy.allowSensitiveMetadata === true,
+    allowSessionClipboardRead: policy.allowSessionClipboardRead === true,
+    allowSessionClipboardWrite: policy.allowSessionClipboardWrite === true,
     allowedHosts: uniqueHosts(policy.allowedHosts ?? DEFAULT_POLICY.allowedHosts),
     blockedHosts: uniqueHosts(policy.blockedHosts ?? []),
     allowedCdpMethods: [...new Set((policy.allowedCdpMethods ?? DEFAULT_POLICY.allowedCdpMethods).map(String))].sort()

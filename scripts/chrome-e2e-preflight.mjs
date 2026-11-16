@@ -11,15 +11,21 @@ export async function verifyChromeRuntime(bridge) {
   assert.equal(browser.compatibility?.debuggerState, "generation-v4", "Reload Chrome: debugger controller code is stale");
   assert.equal(browser.compatibility?.virtualCursor, "overlay-v13", "Reload Chrome: virtual cursor code is stale");
   assert.equal(browser.compatibility?.locatorQueries, "codex-read-v1", "Reload Chrome: typed locator query code is stale");
+  assert.equal(browser.compatibility?.formControls, "verified-fill-v3", "Reload Chrome: verified form-control code is stale");
   assert.equal(browser.compatibility?.frameLocators, "isolated-world-v1", "Reload Chrome: frame locator code is stale");
   assert.equal(browser.compatibility?.navigationWaits, "navigation-v1", "Reload Chrome: navigation wait code is stale");
   assert.equal(browser.compatibility?.highLevelLifecycle, "codex-lifecycle-v1", "Reload Chrome: high-level lifecycle code is stale");
+  assert.equal(browser.compatibility?.sessionClipboard, "host-memory-v1", "Reload Chrome: session clipboard capability is stale");
+  assert.equal(browser.compatibility?.viewportEmulation, "viewport-v1", "Reload Chrome: viewport emulation capability is stale");
+  assert.equal(browser.compatibility?.observedResourceExport, "resource-export-v1", "Reload Chrome: observed-resource export capability is stale");
+  assert.equal(browser.compatibility?.actionIntents, "action-intent-v1", "Reload Chrome: action-intent capability is stale");
+  assert.equal(browser.compatibility?.observationFreshness, "observation-v1", "Reload Chrome: observation freshness capability is stale");
   assert.ok(browser.capabilities?.includes("virtualCursor"), "Reload Chrome: virtual cursor capability is missing");
   assert.ok(browser.capabilities?.includes("locatorQueries"), "Reload Chrome: typed locator query capability is missing");
   assert.ok(browser.capabilities?.includes("frameLocators"), "Reload Chrome: frame locator capability is missing");
   assert.ok(browser.capabilities?.includes("elementWaits"), "Reload Chrome: element wait capability is missing");
   assert.ok(browser.capabilities?.includes("navigationWaits"), "Reload Chrome: navigation wait capability is missing");
-  for (const capability of ["formControls", "sessionLeases", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs"]) {
+  for (const capability of ["formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs"]) {
     assert.ok(browser.capabilities?.includes(capability), `Reload Chrome: ${capability} capability is missing`);
   }
   assert.equal(status.version, VERSION, "Reinstall the native host and reconnect Chrome: running host differs from source");

@@ -13,14 +13,20 @@ const REQUIRED_COMPATIBILITY = Object.freeze({
   pointerInput: "bounded-pointer-v3",
   dialogHandling: "codex-lifecycle-v3",
   locatorQueries: "codex-read-v1",
+  formControls: "verified-fill-v3",
   frameLocators: "isolated-world-v1",
   navigationWaits: "navigation-v1",
-  highLevelLifecycle: "codex-lifecycle-v1"
+  highLevelLifecycle: "codex-lifecycle-v1",
+  sessionClipboard: "host-memory-v1",
+  viewportEmulation: "viewport-v1",
+  observedResourceExport: "resource-export-v1",
+  actionIntents: "action-intent-v1",
+  observationFreshness: "observation-v1"
 });
 
 const REQUIRED_CAPABILITIES = Object.freeze([
   "tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "frameLocators",
-  "elementWaits", "navigationWaits", "formControls", "sessionLeases", "tabLifecycle",
+  "elementWaits", "navigationWaits", "formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle",
   "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility",
   "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag",
   "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"
@@ -75,6 +81,8 @@ function sanitizePolicy(policy) {
   return {
     allowAll: policy?.allowAll === true,
     sensitiveMetadata: policy?.allowSensitiveMetadata === true,
+    sessionClipboardRead: policy?.allowSessionClipboardRead === true,
+    sessionClipboardWrite: policy?.allowSessionClipboardWrite === true,
     allowedHostCount: Array.isArray(policy?.allowedHosts) ? policy.allowedHosts.length : 0,
     blockedHostCount: Array.isArray(policy?.blockedHosts) ? policy.blockedHosts.length : 0,
     cdpAllowlistCount: Array.isArray(policy?.allowedCdpMethods) ? policy.allowedCdpMethods.length : 0

@@ -49,7 +49,11 @@ async function callTool(name, args) {
     client ||= await connectBridge({ instanceId: process.env.UNIVERSAL_BROWSER_INSTANCE_ID });
     const result = await client.call(tool.method, args, { timeoutMs: Number(args.timeoutMs) || undefined });
     if (tool.imageResult && result?.data) {
-      return { content: [{ type: "image", data: result.data, mimeType: result.mimeType || "image/png" }] };
+      const { data, mimeType, ...metadata } = result;
+      return { content: [
+        { type: "image", data, mimeType: mimeType || "image/png" },
+        { type: "text", text: JSON.stringify(metadata, null, 2) }
+      ] };
     }
     return textResult(result);
   } catch (error) {

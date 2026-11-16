@@ -41,6 +41,7 @@ The user's existing Chrome profile and tabs
 | 表单和输入 | 点击、双击、填充、逐字输入、按键、复选框、单选框、原生下拉单选/多选 |
 | 可视化鼠标 | 初始化居中、持续显示、快速可见移动、点击波纹、拖拽轨迹、滚轮和滚动反馈；动画绘制成功后才派发真实输入 |
 | 文件与下载 | 下载预期、显式媒体下载、动态 File Chooser、CSS file input、绝对路径和文件数量校验 |
+| 受控内容导出 | 当前已批准文档的已观察资源清单、按不透明 ID 显式选择、会话临时 ZIP 与自动清理；不提供任意网络请求或页面脚本 |
 | 对话框与日志 | alert/confirm/prompt 生命周期；结构化控制台日志；带游标的浏览器事件 |
 | 多会话 | 页签写操作租约、只读共享、显式移交、续期、临时页签清理、handoff/deliverable 保留 |
 | 安全策略 | 站点 allow/block、敏感元数据门禁、扩展侧 kill switch/blocklist、认证本地管道、敏感结果裁剪 |
@@ -51,10 +52,10 @@ The user's existing Chrome profile and tabs
 ## Requirements
 
 - Google Chrome with Manifest V3 support
-- Node.js 22 or newer for building and MCP clients
+- Node.js 22 or newer for the Native Host runtime, Skill CLI, MCP clients, and source builds
 - Windows、macOS 或 Linux
 
-源码仓库中的 Native Host 安装器支持三个平台；当前回归验证以 Windows 为主。Skill 内直接附带的免编译 Native Host 二进制目前为 Windows 版本。
+当前轻量 Native Host 分发和回归验证以 Windows 为主。Skill 只附带约 7 KB 启动器和约 40 KB Host 脚本，不附带 `node.exe`；目标机器必须预先安装 Node.js 22+，并具备受支持 Windows 通常已内置的 .NET Framework 4.x 运行时。
 
 ## Build and install from source
 
@@ -64,7 +65,7 @@ The user's existing Chrome profile and tabs
    npm.cmd install
    ```
 
-2. Build the standalone Native Messaging Host executable:
+2. Build the lightweight Native Messaging Host launcher and bundled script:
 
    ```powershell
    npm.cmd run build:host
@@ -101,23 +102,25 @@ PowerShell quoting varies by host. Third-party applications should normally call
 [`skills/lingee-chrome-control`](skills/lingee-chrome-control) 是可独立交付的完整技能包，不依赖 Bridge 源码目录，已经包含：
 
 - 完整的 Chrome unpacked extension
-- Windows Native Host 可执行文件
+- 与 unpacked extension 内容一致、保持原扩展 ID 的签名 CRX3 安装包
+- Windows Native Host 轻量启动器与应用脚本（不包含 Node.js）
 - Native Host 安装/卸载脚本
 - Bridge Client、标准调用 CLI、只读诊断和版本预检脚本
 - 所有高层能力的参数表、安全边界、故障处理和调用示例
 
 安装步骤：
 
-1. 在 `chrome://extensions` 开启开发者模式，通过 **Load unpacked** 加载 `skills/lingee-chrome-control/assets/chrome-extension`。
-2. 复制 Chrome 显示的 32 位扩展 ID。
-3. 先检查安装目标和文件哈希：
+1. 在目标机器安装 Node.js 22+，用 `node --version` 检查版本。
+2. 在 `chrome://extensions` 开启开发者模式，通过 **Load unpacked** 加载 `skills/lingee-chrome-control/assets/chrome-extension`。
+3. 复制 Chrome 显示的 32 位扩展 ID。
+4. 先检查 Node 路径、版本、安装目标和文件哈希：
 
    ```powershell
    node .\skills\lingee-chrome-control\scripts\install-host.mjs --extension-id YOUR_EXTENSION_ID --dry-run
    ```
 
-4. 确认后去掉 `--dry-run` 完成当前用户级 Native Host 注册，重启 Chrome。
-5. 运行只读诊断与版本预检：
+5. 确认后去掉 `--dry-run` 完成当前用户级 Native Host 注册，重启 Chrome。安装器会记录当前 `node` 的绝对路径，Node 移动或升级后需重新运行安装器。
+6. 运行只读诊断与版本预检：
 
    ```powershell
    node .\skills\lingee-chrome-control\scripts\doctor.mjs
@@ -126,9 +129,11 @@ PowerShell quoting varies by host. Third-party applications should normally call
 
 第三方平台应在整个任务中保持一个稳定、非敏感的 `UNIVERSAL_BROWSER_SESSION_ID`。存在多个 Chrome Bridge 实例时，必须先发现实例并明确设置 `UNIVERSAL_BROWSER_INSTANCE_ID`，不能根据页签标题猜测用户配置。
 
+完整要求和故障处理见 [Native Host 安装说明](skills/lingee-chrome-control/references/host-installation.md)。目标机器无需源码仓库或 `npm install`，但必须保留安装时记录的 Node.js 22+ 可执行文件。
+
 ## Packaged CRX
 
-已签名的 CRX3 安装包位于 [`releases/lingee-chrome-agent-bridge-0.1.26.crx`](releases/lingee-chrome-agent-bridge-0.1.26.crx)，对应扩展 ID 为 `haibmamedieblhbonifchcedcbbfgini`。校验值及 Native Host 配套说明见 [`releases/README.md`](releases/README.md)。
+已签名的 CRX3 安装包位于 [`releases/lingee-chrome-agent-bridge-0.1.32.crx`](releases/lingee-chrome-agent-bridge-0.1.32.crx)，并内置于 Skill 的 `assets/lingee-chrome-agent-bridge-0.1.32.crx`，对应扩展 ID 为 `haibmamedieblhbonifchcedcbbfgini`。校验值及 Native Host 配套说明见 [`releases/README.md`](releases/README.md)。
 
 CRX 只包含 Chrome 扩展，仍需单独安装 Native Host，并将上述扩展 ID 传给 `install-host.mjs`。Windows/macOS 的普通用户分发建议使用 Chrome Web Store 或企业管理策略；本地开发仍推荐加载 unpacked extension。
 
@@ -192,7 +197,7 @@ Use the absolute path to `src/mcp-server.mjs`:
 }
 ```
 
-MCP server 暴露按用途划分的高层工具，例如 `browser_list_tabs`、`browser_dom_snapshot`、`browser_click`、`browser_fill`、`browser_wait_for`、`browser_expect_navigation`、`browser_screenshot` 和 `policy_allow_host`。工具集合由 Skill 内的标准能力注册表统一生成并校验。
+MCP server 暴露按用途划分的高层工具，例如 `browser_list_tabs`、`browser_dom_snapshot`、`browser_click`、`browser_fill`、`browser_wait_for`、`browser_expect_navigation`、`browser_screenshot`、`browser_set_viewport` 和 `policy_allow_host`。工具集合由 Skill 内的标准能力注册表统一生成并校验。
 
 If several Chrome profiles create bridge instances, set `UNIVERSAL_BROWSER_INSTANCE_ID` for the MCP process. Discover IDs with:
 

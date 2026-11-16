@@ -180,8 +180,11 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /function createdTabsForClick[\s\S]*entry\.openerTabId === tabId[\s\S]*entry\.windowId === sourceTab\.windowId/, "new tabs without an opener are correlated only when the controlled source was active in the same window");
   assert.match(background, /createdTabIds\.length && error\?\.code === "CURSOR_RENDER_FAILED"[\s\S]*post-new-tab-click[\s\S]*finalFeedbackUnavailable: true/, "a confirmed child tab makes unavailable post-click feedback non-fatal after the pre-input visual contract passed");
   assert.match(background, /locatorQueries: "codex-read-v1"/);
+  assert.match(background, /formControls: "verified-fill-v3"/);
   assert.match(background, /resolveFrameContext[\s\S]*this\.scrollIntoView\(\{block:'center',inline:'center',behavior:'instant'\}\)[\s\S]*getBoundingClientRect/, "frame elements are scrolled into the top-level viewport before pointer coordinates are composed");
   assert.match(background, /resolveFrameContext\(tabId, framePath, false\)[\s\S]*resolveLocator\.toString\(\)[\s\S]*false/, "frame offsets are measured again without scrolling after the target scroll changes ancestor geometry");
+  assert.match(background, /async function resolveLocator[\s\S]*performance\.now\(\) \+ 2000[\s\S]*requestAnimationFrame[\s\S]*document\.elementFromPoint/, "pointer locators wait for stable geometry and a point that actually receives events");
+  assert.match(background, /LINGEE_ACTIONABILITY[\s\S]*INPUT_TARGET_OBSCURED/, "obstructed pointer targets fail with a stable actionability error");
   assert.match(background, /DOM\.describeNode[\s\S]*Page\.getFrameTree[\s\S]*flattenFrameTree\(latestFrameTree\)\.get\(childFrameId\)/, "each resolved frame element is checked against a fresh frame tree for cross-process navigation");
   assert.match(background, /Target\.attachedToTarget[\s\S]*registerOopifSession[\s\S]*Target\.setAutoAttach[\s\S]*flatten: true/, "out-of-process frames use Chrome debugger flat auto-attach sessions");
   assert.doesNotMatch(background, /Target\.attachToTarget/, "Chrome extension frame control does not use unsupported direct child-target attachment");
@@ -191,6 +194,9 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*Promise\.race[\s\S]*dialogOpened: true/);
   assert.match(background, /async function sendPointerCdp[\s\S]*POINTER_ACK_TIMEOUT_MS[\s\S]*"POINTER_INPUT_TIMEOUT"/, "every pointer command must have a bounded acknowledgement");
   assert.match(background, /async function sendCdp[\s\S]*CDP_ACK_TIMEOUT_MS[\s\S]*"CDP_COMMAND_TIMEOUT"/, "generic debugger commands must have a bounded acknowledgement");
+  assert.match(background, /async function fillLocator[\s\S]*Input\.insertText[\s\S]*waitForFocusedEditableValue/, "fill atomically replaces selected text and verifies the controlled input's final value");
+  assert.match(background, /async function waitForFocusedEditableValue[\s\S]*CONTROL_STATE_MISMATCH/, "fill fails closed when a controlled input does not reach the requested value");
+  assert.match(background, /async function pressKey[\s\S]*if \(modifierMask & 7\) delete eventDefinition\.text[\s\S]*commands: editingCommands/, "Control, Alt, and Meta shortcuts cannot insert printable text and select-all uses the native editing command");
   assert.match(background, /async function requireVirtualCursor[\s\S]*CURSOR_REQUIRED_DELAYS_MS[\s\S]*deadline[\s\S]*CURSOR_RENDER_FAILED/, "required cursor feedback retries transient render failures within one bounded budget");
   assert.match(background, /async function ensureDebugger[\s\S]*wasControlled[\s\S]*recoverCursor && !wasControlled[\s\S]*recoverVirtualCursor/, "cursor recovery runs when control starts, not before every debugger command");
   assert.match(background, /async function sendCdp[\s\S]*ensureDebugger\(tabId, \{ recoverCursor: false \}\)/, "generic debugger commands do not repeat cursor recovery");

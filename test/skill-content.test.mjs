@@ -63,7 +63,7 @@ function parseParameterCell(cell) {
 }
 
 function parseToolCatalog(reference) {
-  const section = reference.match(/^## Tool mapping\r?\n([\s\S]*?)(?=^## |\Z)/m)?.[1] ?? "";
+  const section = reference.match(/^## Tool mapping\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? "";
   const catalog = new Map();
   for (const line of section.split(/\r?\n/)) {
     if (!/^\| `[^`]+` \|/.test(line)) continue;
@@ -118,7 +118,9 @@ test("skill package contains required cross-tool files", async () => {
     "references/tools.md",
     "references/capabilities.md",
     "references/examples.md",
+    "references/host-installation.md",
     "references/kdesign.md",
+    "references/host-installation.md",
     "references/security.md",
     "references/troubleshooting.md",
     "scripts/invoke.mjs",
@@ -132,22 +134,33 @@ test("skill package contains required cross-tool files", async () => {
     "scripts/runtime/standard-capabilities.mjs",
     "examples/kdesign-components.json",
     "examples/kdesign-pro-pages.json",
+    "examples/kingdee-business-page.json",
+    "assets/lingee-chrome-agent-bridge-0.1.32.crx",
     "assets/chrome-extension/manifest.json",
-    "assets/native-host/universal-browser-host.exe"
+    "assets/native-host/native-host-launcher.exe",
+    "assets/native-host/native-host.cjs"
   ]) assert.equal(await exists(join(skillRoot, path)), true, path);
 });
 
-test("skill bundles the current Windows Native Host executable", async () => {
-  assert.deepEqual(
-    await readFile(join(skillRoot, "assets", "native-host", "universal-browser-host.exe")),
-    await readFile(join(repoRoot, "dist", "universal-browser-host.exe")),
-    "Native Host stays synchronized in the Skill package"
-  );
+test("skill bundles the Node-dependent Native Host without embedding Node.js", async () => {
+  for (const name of ["native-host-launcher.exe", "native-host.cjs"]) {
+    assert.deepEqual(
+      await readFile(join(skillRoot, "assets", "native-host", name)),
+      await readFile(join(repoRoot, "dist", name)),
+      `${name} stays synchronized in the Skill package`
+    );
+  }
+  assert.equal(await exists(join(skillRoot, "assets", "native-host", "universal-browser-host.exe")), false);
+  assert.equal((await readFile(join(skillRoot, "assets", "native-host", "native-host-launcher.exe"))).length < 1024 * 1024, true);
+  assert.equal((await readFile(join(skillRoot, "assets", "native-host", "native-host.cjs"))).length < 1024 * 1024, true);
 });
 
 test("skill bundles an exact installable copy of the Chrome extension", async () => {
   const extensionFiles = [
     "background.js",
+    "observation-state.js",
+    "observation-evidence.js",
+    "resource-catalog.js",
     "locator-query.js",
     "frame-locator.js",
     "form-controls.js",
@@ -162,6 +175,7 @@ test("skill bundles an exact installable copy of the Chrome extension", async ()
     "tab-operation-queue.js",
     "ui.css",
     "virtual-cursor.js",
+    "viewport.js",
     "icons/lingee-48.png"
   ];
   for (const path of extensionFiles) {
@@ -177,6 +191,16 @@ test("skill bundles an exact installable copy of the Chrome extension", async ()
   assert.equal(manifest.version, packageManifest.version);
 });
 
+test("skill bundles the signed CRX for the current unpacked extension", async () => {
+  const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
+  const crxName = `lingee-chrome-agent-bridge-${packageManifest.version}.crx`;
+  const skillCrx = await readFile(join(skillRoot, "assets", crxName));
+  const releaseCrx = await readFile(join(repoRoot, "releases", crxName));
+  assert.deepEqual(skillCrx, releaseCrx, "Skill and release CRX stay synchronized");
+  assert.equal(skillCrx.subarray(0, 4).toString("ascii"), "Cr24");
+  assert.equal(skillCrx.readUInt32LE(4), 3, "bundled package uses CRX3");
+});
+
 test("tool reference structurally matches MCP schemas and Bridge mappings", async () => {
   const reference = await readFile(join(skillRoot, "references/tools.md"), "utf8");
   const api = await readFile(join(repoRoot, "docs/API.md"), "utf8");
@@ -189,7 +213,7 @@ test("tool reference structurally matches MCP schemas and Bridge mappings", asyn
   assert.deepEqual([...catalog.keys()].sort(), tools.map((tool) => tool.name).sort());
   assert.deepEqual([...mappings.keys()].sort(), tools.map((tool) => tool.name).sort());
   assert.equal(
-    reference.match(/^## Tool mapping\r?\n([\s\S]*?)(?=^## |\Z)/m)?.[1].trim().replaceAll("\r\n", "\n"),
+    reference.match(/^## Tool mapping\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1].trim().replaceAll("\r\n", "\n"),
     renderToolMappingTable(),
     "documented tool table is generated from the standard capability registry"
   );
@@ -256,6 +280,8 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
   assert.match(skill, /resolve CLI entrypoints from the loaded Skill root/i);
   assert.match(skill, /Preserve visible pointer behavior/i);
   assert.match(skill, /standard-control invariant/i);
+  assert.match(skill, /Node\.js 22\+/i);
+  assert.match(skill, /Node itself is not bundled or downloaded/i);
   assert.match(skill, /For the entire task[\s\S]*Never switch to raw CDP/i);
 
   const orderedDecisions = [
@@ -291,6 +317,8 @@ test("security contract requires approval and forbids secret-store access", asyn
   for (const name of [
     "policy_set_allow_all",
     "policy_set_sensitive_metadata",
+    "policy_set_session_clipboard_read",
+    "policy_set_session_clipboard_write",
     "browser_history_search",
     "browser_bookmark_search",
     "browser_downloads_search"

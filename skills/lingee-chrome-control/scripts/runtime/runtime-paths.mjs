@@ -17,3 +17,7 @@ export function runtimeDirectory() {
 export function policyPath() {
   return path.join(dataDirectory(), "policy.json");
 }
+
+export function resourceExportDirectory() {
+  return path.join(dataDirectory(), "resource-exports");
+}

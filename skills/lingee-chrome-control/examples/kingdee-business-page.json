@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "workflows": [
+    {
+      "id": "generic-div-action",
+      "description": "Uniquely locate and click a Kingdee toolbar action rendered as a generic div, then verify a deterministic page result.",
+      "defaults": {
+        "ACTION_LOCATOR": { "css": ".generic-business-action", "text": "新增", "exact": true },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "新增:ok"
+      },
+      "steps": [
+        { "id": "require-unique-action", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$ACTION_LOCATOR" }, "expect": { "equals": 1 } },
+        { "id": "click-action", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$ACTION_LOCATOR" } },
+        { "id": "verify-result", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "verified-controlled-fill",
+      "description": "Replace an existing React/KDesign controlled-input value and require the Bridge final-value verification to succeed.",
+      "defaults": {
+        "INPUT_LOCATOR": { "testId": "native-fill" },
+        "VALUE": "Lingee Fill",
+        "VALUE_LENGTH": 11
+      },
+      "steps": [
+        { "id": "fill-and-verify", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR", "value": "$VALUE" }, "expect": { "path": "valueLength", "equals": "$VALUE_LENGTH" } }
+      ]
+    },
+    {
+      "id": "split-dropdown-action",
+      "description": "Open a Kingdee split-button dropdown by structure, then choose and verify one exact visible menu item.",
+      "defaults": {
+        "ARROW_LOCATOR": { "css": ".generic-business-split > :nth-child(2)" },
+        "MENU_ITEM_LOCATOR": { "css": ".generic-business-menu-item", "text": "反审核", "exact": true },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "反审核:ok"
+      },
+      "steps": [
+        { "id": "open-menu", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$ARROW_LOCATOR" } },
+        { "id": "wait-menu-item", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$MENU_ITEM_LOCATOR", "state": "visible", "timeoutMs": 5000 } },
+        { "id": "choose-menu-item", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$MENU_ITEM_LOCATOR" } },
+        { "id": "verify-result", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "select-business-row",
+      "description": "Idempotently select one real table-row checkbox and verify the application's selected-row state.",
+      "defaults": {
+        "CHECKBOX_LOCATOR": { "testId": "generic-business-row-check" },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "selected=true"
+      },
+      "steps": [
+        { "id": "select-row", "method": "browser.setChecked", "params": { "tabId": "$TAB_ID", "locator": "$CHECKBOX_LOCATOR", "checked": true } },
+        { "id": "verify-selected-state", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "prepare-delete-intent",
+      "description": "Prepare, but never confirm or execute, an exact deletion click so the caller can present the returned risk metadata to the user.",
+      "defaults": {
+        "SUMMARY": "删除已复核的一条测试基础资料",
+        "DATA_TYPES": ["测试基础资料"],
+        "CONFIRM_LOCATOR": { "css": "*:not(:has(*))", "text": "确定", "exact": true }
+      },
+      "steps": [
+        { "id": "require-unique-confirm", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$CONFIRM_LOCATOR" }, "expect": { "equals": 1 } },
+        { "id": "prepare-delete", "method": "browser.prepareActionIntent", "params": { "tabId": "$TAB_ID", "actionType": "delete", "summary": "$SUMMARY", "dataTypes": "$DATA_TYPES", "action": { "method": "browser.click", "params": { "locator": "$CONFIRM_LOCATOR" } } }, "expect": { "path": "status", "equals": "pending-confirmation" } }
+      ]
+    }
+  ]
+}

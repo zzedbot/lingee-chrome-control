@@ -87,7 +87,9 @@ try {
   stage = "virtualCursor";
   const cursorX = button.rect.x + button.rect.width / 2;
   const cursorY = button.rect.y + button.rect.height / 2;
-  await bridge.call("browser.mouseMove", { tabId, x: cursorX, y: cursorY });
+  const pointerObservation = await bridge.call("browser.screenshot", { tabId, format: "png" });
+  assert.ok(pointerObservation.observationId);
+  await bridge.call("browser.mouseMove", { tabId, observationId: pointerObservation.observationId, x: cursorX, y: cursorY });
   const cursorState = await readCursorState(bridge, tabId);
   assertCursorOverlay(cursorState);
   assert.deepEqual(

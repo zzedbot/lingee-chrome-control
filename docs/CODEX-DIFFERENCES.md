@@ -19,17 +19,19 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Browser surface | User's existing Chrome profile | User's existing Chrome profile | Equivalent |
 | Extension platform | Chrome extension | Chrome Manifest V3 extension | Equivalent role |
 | Browser control | Chrome extension APIs, debugger/CDP, higher-level browser API | Chrome extension APIs, debugger/CDP, clean-room locator API | Same primitives; different implementation |
-| Foreign extension frame isolation | Runtime monitor on controlled tabs before debugger attachment | Clean-room runtime monitor with the same boundary and lifecycle | Functionally aligned; implementation and private lease model differ |
+| Foreign extension frame isolation | Runtime monitor on controlled tabs before debugger attachment | Clean-room runtime monitor installed before attachment | Partial: existing, dynamically added and known-shadow-root frames are covered; a brand-new shadow root attached later to an already-connected host may wait for a relevant rescan |
 | Desktop bridge | OpenAI Native Messaging Host | Independent Native Messaging Host | Same pattern; incompatible protocol |
 | Chrome-to-host transport | Native Messaging over stdio | Native Messaging over stdio | Equivalent |
 | Host discovery | Codex privileged browser runtime/native pipe bridge | Descriptor-based local named pipe/Unix socket discovery | Same local-IPC role; different discovery/authentication |
 | Agent entry point | Codex privileged JavaScript runtime and `agent.browsers.*` | MCP stdio, JSON-RPC CLI, and JavaScript client | Intentionally vendor-neutral |
 | Public capability contract | Private runtime-owned capability surface | One bundled standard-capability registry drives MCP schemas and the Skill CLI gate | Lingee is public and fail-closed; protocols remain incompatible |
-| Distribution | Signed OpenAI Chrome Web Store extension and bundled proprietary plugin | Unpacked development extension plus locally built host | Production signing/update not included |
+| Distribution | Signed OpenAI Chrome Web Store extension and bundled proprietary plugin | Unpacked/signed local extension plus lightweight Host launcher and script requiring system Node.js 22+ | Node runtime and automatic production updates are not bundled |
 | Extension identity | OpenAI-controlled fixed ID | ID assigned to the loaded/published independent extension | Necessarily different |
 | Native host name | `com.openai.codexextension` | `org.universal_browser.bridge` | Necessarily different |
 
 ## Capability comparison
+
+Status meanings: **Aligned** means the same user-visible capability and safety boundary is present through Lingee's public protocol; **Partial** means the core workflow is present with a documented protocol or product-level difference; **Intentionally not implemented** means the boundary belongs to proprietary product infrastructure or would weaken this project's standard-control contract.
 
 | Capability | Status | Notes |
 |---|---|---|
@@ -46,21 +48,25 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Session/tab lifecycle | Implemented with differences | Explicit non-secret session IDs, renewable exclusive leases, temporary tabs and handoff/deliverable markers |
 | Download and file chooser lifecycle | Implemented | Wait-before-action ordering, completed downloads, restricted media target, captured chooser and validated files |
 | Structured console logs | Implemented | Bounded primitive summaries, filtering/cursor and policy-sanitized source URLs; no remote object handles |
+| Browser session clipboard | Implemented with differences | Per-session bounded Native Host memory with independent read/write gates; plain text, Markdown, inert HTML, and validated PNG only; intentionally never accesses the OS clipboard |
 | Accessibility snapshot | Implemented | Uses CDP Accessibility domain |
 | Playwright-style selectors | Partially equivalent | CSS, role/name, label, text, test ID; not the full Codex subset or upstream Playwright |
 | Click, fill, keypress, scroll | Implemented | CDP Input-backed |
-| Drag and coordinate-level computer use | Implemented at execution layer | Screenshots, coordinate click, move, drag, wheel, key and text are available; visual reasoning belongs to the calling model |
+| Drag and coordinate-level computer use | Aligned at execution layer | Coordinate actions require a short-lived, single-use screenshot observation bound to tab, document and normalized DOM/layout evidence; overlay, input and result share an operation sequence. Visual reasoning remains with the calling model |
 | Visible virtual pointer | Implemented | Persistent closed-Shadow-DOM pointer starts centered, follows mouse, click, wheel, and drag actions, and is removed on detach; exact Codex styling and internals are proprietary |
-| Screenshots | Implemented | PNG/JPEG and beyond-viewport option |
-| File chooser/input upload | Implemented with differences | CSS file-input path; no private secure picker workflow |
+| Screenshots | Aligned with additional freshness contract | PNG/JPEG and beyond-viewport output; only viewport PNG creates coordinate-safe evidence |
+| Responsive viewport emulation | Implemented | Bounded desktop/tablet/mobile dimensions and device scale; session-scoped reset and pointer recalibration |
+| Current-document resource export | Implemented with differences | Lists policy-approved HTTP(S) resources already observed in the top-level document and packages an explicit opaque-ID selection into a bounded session-temporary ZIP; no arbitrary fetch or private Codex export protocol |
+| File chooser/input upload | Partial | Captured chooser and CSS input paths validate absolute regular files; every upload is hard-gated by a tab/origin/action/session-bound confirmation intent, but there is no private OS secure-picker service |
 | JavaScript dialogs | Implemented | — |
-| Downloads | Metadata search implemented | Download initiation is performed through page interaction; richer lifecycle helpers differ |
+| Downloads | Aligned for supported workflow | Wait-before-action lifecycle, completed result, restricted locator-backed media download, and gated metadata search are implemented; private Codex download objects/protocol remain incompatible |
 | CDP events and raw commands | Implemented | Explicit local allowlist |
 | History and bookmarks | Implemented, off by default | Independent sensitive-metadata approval |
-| Multiple Chrome profiles/instances | Implemented at discovery level | Explicit instance ID selection; no Codex task tab-group ownership semantics |
-| Browser authentication forms | Not equivalent | No OpenAI secure credential form or secret-isolation service |
-| Vision-based computer use | Not implemented | MCP screenshot consumers may add their own vision loop |
-| Website confirmation UI | Policy API implemented; native consent UI missing | Codex has integrated user prompts and settings UI |
+| Multiple Chrome profiles/instances | Partial | Explicit instance selection plus per-session tab leases and lifecycle markers; no Codex private task grouping or profile UI |
+| Browser authentication forms | Intentionally not implemented | No OpenAI secure credential form, password manager, or secret-isolation service; users complete secrets, MFA and CAPTCHA directly in Chrome |
+| Vision-based computer use | Intentionally external | MCP screenshot consumers may add their own vision loop; the Bridge enforces observation freshness but does not ship a model |
+| Consequential-action confirmation | Partial | Structured intents cover upload, message send, deletion, payment, permission change, login and browser permission. The Host hard-gates uploads; generic click business meaning must be declared by the standard Skill/caller because the Host cannot infer it reliably |
+| Website approval UI | Partial | Machine-readable exact-host/subdomain policy gates are implemented; confirmation is surfaced by the calling agent rather than proprietary Codex product UI |
 | Allow/block lists | Implemented | JSON policy plus extension defense-in-depth blocklist |
 | Memory and account data controls | Not applicable | Belongs to OpenAI product/account infrastructure |
 | Telemetry and training controls | Not implemented | No telemetry is sent by this project |
@@ -73,7 +79,7 @@ Reused directly:
 - Chrome Native Messaging protocol specification
 - Chrome extension APIs
 - Chrome DevTools Protocol
-- Node.js standard library and Single Executable Application tooling
+- Node.js standard library, esbuild bundling, and a lightweight Windows launcher
 - MCP's public JSON-RPC protocol shape
 
 Not reused:
@@ -89,4 +95,4 @@ Not reused:
 
 This implementation is not wire-compatible with the OpenAI extension or Codex Native Host. Third-party software must call the supplied MCP server, JSON-RPC bridge, or JavaScript client.
 
-Feature parity can be extended without changing the architecture. The controlled-tab mitigation for the previously observed Chrome 152+ foreign-extension-frame debugger incompatibility is covered by simulated API/DOM tests and a real Chrome 152 regression using a web-accessible Surfingkeys frame. The main remaining production-grade gaps are integrated consent UI, secure credential entry, Codex's private visual reasoning/orchestration, richer download lifecycle management, signed distribution, and broader security hardening.
+The final 0.1.31 review closes the public high-level TODO surface without claiming private protocol equivalence. Remaining product differences are deliberate boundaries: integrated proprietary consent UI, secure credential entry, Codex's private visual reasoning/orchestration, store-managed automatic updates, and private service/security infrastructure. One implementation limitation remains explicitly partial rather than hidden: late-created shadow roots may not be discovered until a relevant monitor rescan. The standard Skill continues to block raw CDP, page JavaScript and unknown methods even though the extension internally uses documented Chrome debugger primitives to implement approved high-level operations.
