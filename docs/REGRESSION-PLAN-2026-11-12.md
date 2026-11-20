@@ -1,8 +1,8 @@
-# Lingee Chrome Control 0.1.27 统一回归计划
+# Lingee Browser Control 0.1.27 统一回归计划
 
 日期：2026-11-12  
 范围：TODO 第 02～11 项及现有基础控制能力  
-执行约束：浏览器操作仅通过 Lingee Chrome Control 标准高层 MCP 或内置 Node CLI；禁止 raw CDP、页面脚本、DevTools 及其他浏览器控制器。
+执行约束：浏览器操作仅通过 Lingee Browser Control 标准高层 MCP 或内置 Node CLI；禁止 raw CDP、页面脚本、DevTools 及其他浏览器控制器。
 
 ## 状态说明
 

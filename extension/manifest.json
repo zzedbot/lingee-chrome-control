@@ -1,24 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "Lingee Chrome Agent Bridge",
-  "version": "0.1.32",
-  "description": "Allows explicitly authorized local AI agents to control Chrome through a native bridge.",
+  "name": "Lingee Browser Agent Bridge",
+  "version": "0.2.2",
+  "description": "Connects supported browsers to explicitly authorized Lingee browser-control agents.",
+  "homepage_url": "https://app.lingee.com",
   "icons": {
-    "48": "icons/lingee-48.png"
+    "16": "icons/lingee-16.png",
+    "32": "icons/lingee-32.png",
+    "48": "icons/lingee-48.png",
+    "128": "icons/lingee-128.png"
   },
   "permissions": [
     "alarms",
-    "bookmarks",
     "debugger",
     "downloads",
-    "history",
     "nativeMessaging",
-    "notifications",
     "scripting",
     "storage",
     "tabGroups",
     "tabs",
     "webNavigation"
+  ],
+  "optional_permissions": [
+    "bookmarks",
+    "history"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -38,9 +43,12 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Lingee Chrome Agent Bridge",
+    "default_title": "Lingee Browser Agent Bridge",
     "default_icon": {
-      "48": "icons/lingee-48.png"
+      "16": "icons/lingee-16.png",
+      "32": "icons/lingee-32.png",
+      "48": "icons/lingee-48.png",
+      "128": "icons/lingee-128.png"
     },
     "default_popup": "popup.html"
   },

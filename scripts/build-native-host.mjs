@@ -21,7 +21,7 @@ const csc = await findCsc();
 await execFileAsync(csc, ["/nologo", "/target:exe", "/optimize+", `/out:${launcher}`, launcherSource], { cwd: root, windowsHide: true });
 await fs.writeFile(nodePathFile, `${process.execPath}\n`, "utf8");
 
-for (const obsolete of ["native-host.blob", "sea-config.json", "universal-browser-host.exe", "universal-browser-host"]) {
+for (const obsolete of ["native-host.blob", "sea-config.json", "lingee-browser-host.exe", "lingee-browser-host"]) {
   await fs.rm(path.join(dist, obsolete), { force: true });
 }
 

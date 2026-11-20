@@ -1,17 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   STANDARD_BRIDGE_METHODS,
   STANDARD_CAPABILITIES,
   renderToolMappingTable
-} from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
+} from "../skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const skillRoot = join(repoRoot, "skills", "lingee-chrome-control");
+const skillRoot = join(repoRoot, "skills", "lingee-browser-control");
 
 async function exists(path) {
   try {
@@ -135,8 +135,7 @@ test("skill package contains required cross-tool files", async () => {
     "examples/kdesign-components.json",
     "examples/kdesign-pro-pages.json",
     "examples/kingdee-business-page.json",
-    "assets/lingee-chrome-agent-bridge-0.1.32.crx",
-    "assets/chrome-extension/manifest.json",
+    "assets/lingee-browser-agent-bridge-0.2.2.crx",
     "assets/native-host/native-host-launcher.exe",
     "assets/native-host/native-host.cjs"
   ]) assert.equal(await exists(join(skillRoot, path)), true, path);
@@ -150,50 +149,21 @@ test("skill bundles the Node-dependent Native Host without embedding Node.js", a
       `${name} stays synchronized in the Skill package`
     );
   }
-  assert.equal(await exists(join(skillRoot, "assets", "native-host", "universal-browser-host.exe")), false);
+  assert.equal(await exists(join(skillRoot, "assets", "native-host", "lingee-browser-host.exe")), false);
   assert.equal((await readFile(join(skillRoot, "assets", "native-host", "native-host-launcher.exe"))).length < 1024 * 1024, true);
   assert.equal((await readFile(join(skillRoot, "assets", "native-host", "native-host.cjs"))).length < 1024 * 1024, true);
 });
 
-test("skill bundles an exact installable copy of the Chrome extension", async () => {
-  const extensionFiles = [
-    "background.js",
-    "observation-state.js",
-    "observation-evidence.js",
-    "resource-catalog.js",
-    "locator-query.js",
-    "frame-locator.js",
-    "form-controls.js",
-    "debugger-controller.js",
-    "foreign-frame-monitor.js",
-    "manifest.json",
-    "monitor-injection.js",
-    "options.html",
-    "options.js",
-    "popup.html",
-    "popup.js",
-    "tab-operation-queue.js",
-    "ui.css",
-    "virtual-cursor.js",
-    "viewport.js",
-    "icons/lingee-48.png"
-  ];
-  for (const path of extensionFiles) {
-    assert.deepEqual(
-      await readFile(join(skillRoot, "assets", "chrome-extension", path)),
-      await readFile(join(repoRoot, "extension", path)),
-      `${path} stays synchronized in the Skill package`
-    );
-  }
-  const manifest = JSON.parse(await readFile(join(skillRoot, "assets", "chrome-extension", "manifest.json"), "utf8"));
+test("skill keeps one signed CRX and does not duplicate unpacked extension source", async () => {
+  assert.equal(await exists(join(skillRoot, "assets", "chrome-extension")), false);
   const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
-  assert.equal(manifest.name, "Lingee Chrome Agent Bridge");
-  assert.equal(manifest.version, packageManifest.version);
+  const assets = await readdir(join(skillRoot, "assets"));
+  assert.deepEqual(assets.filter((name) => name.endsWith(".crx")), [`lingee-browser-agent-bridge-${packageManifest.version}.crx`]);
 });
 
-test("skill bundles the signed CRX for the current unpacked extension", async () => {
+test("skill bundles the signed CRX for the current extension source", async () => {
   const packageManifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
-  const crxName = `lingee-chrome-agent-bridge-${packageManifest.version}.crx`;
+  const crxName = `lingee-browser-agent-bridge-${packageManifest.version}.crx`;
   const skillCrx = await readFile(join(skillRoot, "assets", crxName));
   const releaseCrx = await readFile(join(repoRoot, "releases", crxName));
   assert.deepEqual(skillCrx, releaseCrx, "Skill and release CRX stay synchronized");
@@ -209,7 +179,7 @@ test("tool reference structurally matches MCP schemas and Bridge mappings", asyn
   const mappings = new Map(STANDARD_CAPABILITIES.map(({ name, method }) => [name, method ?? "instances"]));
   const apiMethods = new Set([...api.matchAll(/`([a-z]+\.[A-Za-z][A-Za-z0-9]*)`/g)].map((match) => match[1]));
 
-  assert.match(reference, /preferred MCP server is `universalChrome`/i);
+  assert.match(reference, /preferred MCP server is `lingeeBrowser`/i);
   assert.deepEqual([...catalog.keys()].sort(), tools.map((tool) => tool.name).sort());
   assert.deepEqual([...mappings.keys()].sort(), tools.map((tool) => tool.name).sort());
   assert.equal(
@@ -260,7 +230,7 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
   const skill = await readFile(join(skillRoot, "SKILL.md"), "utf8");
   const metadata = await readFile(join(skillRoot, "agents/openai.yaml"), "utf8");
 
-  assert.match(skill, /^---\r?\nname: lingee-chrome-control\r?\ndescription: Use when /);
+  assert.match(skill, /^---\r?\nname: lingee-browser-control\r?\ndescription: Use when /);
   for (const resource of [
     "references/tools.md",
     "references/security.md",
@@ -285,7 +255,7 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
   assert.match(skill, /For the entire task[\s\S]*Never switch to raw CDP/i);
 
   const orderedDecisions = [
-    "explicit Chrome intent",
+    "explicit supported-browser intent",
     "purpose-built connector/API",
     "check bridge",
     "choose instance/tab",
@@ -304,9 +274,9 @@ test("skill metadata and workflow expose the cross-tool contract", async () => {
     cursor = next;
   }
 
-  assert.match(metadata, /display_name: "Lingee Chrome Control"/);
-  assert.match(metadata, /short_description: "通过 Lingee Bridge 安全控制现有 Chrome"/);
-  assert.match(metadata, /default_prompt: "Use \$lingee-chrome-control standard high-level MCP or CLI methods exclusively[^"]*never use raw CDP or page scripts\."/);
+  assert.match(metadata, /display_name: "Lingee Browser Control"/);
+  assert.match(metadata, /short_description: "通过 Lingee Bridge 安全控制现有浏览器"/);
+  assert.match(metadata, /default_prompt: "Use \$lingee-browser-control standard high-level MCP or CLI methods exclusively[^"]*never use raw CDP or page scripts\."/);
 });
 
 test("security contract requires approval and forbids secret-store access", async () => {
@@ -390,11 +360,11 @@ test("instance selection happens before MCP status can cache a connection", asyn
   );
   assert.match(
     skill,
-    /MCP server process[^\n]*`UNIVERSAL_BROWSER_INSTANCE_ID`[^\n]*(?:restart|reconnect)[^\n]*before `bridge_status`/i
+    /MCP server process[^\n]*`LINGEE_BROWSER_INSTANCE_ID`[^\n]*(?:restart|reconnect)[^\n]*before `bridge_status`/i
   );
   assert.match(
     skill,
-    /CLI[^\n]*set `UNIVERSAL_BROWSER_INSTANCE_ID`[^\n]*before each invocation/i
+    /CLI[^\n]*set `LINGEE_BROWSER_INSTANCE_ID`[^\n]*before each invocation/i
   );
 });
 
@@ -404,7 +374,7 @@ test("troubleshooting defines stable wrapper errors and minimal safe recovery", 
   const required = {
     BRIDGE_ROOT_NOT_FOUND: {
       meaning: /development override[^.]*Bridge project root/i,
-      response: /unset `UNIVERSAL_CHROME_BRIDGE_ROOT`/i
+      response: /unset `LINGEE_BROWSER_BRIDGE_ROOT`/i
     },
     INVALID_ARGUMENTS: {
       meaning: /CLI[^.]*arguments|arguments[^.]*CLI/i,
@@ -423,8 +393,8 @@ test("troubleshooting defines stable wrapper errors and minimal safe recovery", 
       response: /version[^.]*Bridge Client|Bridge Client[^.]*version/i
     },
     BRIDGE_INSTANCE_SELECTION_REQUIRED: {
-      meaning: /More than one live Chrome Bridge instance/i,
-      response: /`UNIVERSAL_BROWSER_INSTANCE_ID`[^.]*do not infer/i
+      meaning: /More than one live Browser Bridge instance/i,
+      response: /`LINGEE_BROWSER_INSTANCE_ID`[^.]*do not infer/i
     }
   };
 

@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectBridge, listBridgeInstances } from "../src/bridge-client.mjs";
 import { coveredMethods } from "../test/web-fixture/capability-cases.mjs";
-import { STANDARD_CAPABILITIES } from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
+import { STANDARD_CAPABILITIES } from "../skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(repoRoot, "test", "web-fixture");
@@ -14,13 +14,13 @@ const distRoot = path.join(fixtureRoot, "dist");
 await access(path.join(distRoot, "index.html"));
 
 const instances = await listBridgeInstances();
-const requestedInstanceId = process.env.UNIVERSAL_BROWSER_INSTANCE_ID;
+const requestedInstanceId = process.env.LINGEE_BROWSER_INSTANCE_ID;
 const selected = requestedInstanceId
   ? instances.find(({ instanceId }) => instanceId === requestedInstanceId)
   : instances.length === 1 ? instances[0] : undefined;
 if (!selected) throw new Error(requestedInstanceId
   ? `Bridge instance ${requestedInstanceId} is not running`
-  : `Expected exactly one Bridge instance; found ${instances.length}. Set UNIVERSAL_BROWSER_INSTANCE_ID.`);
+  : `Expected exactly one Bridge instance; found ${instances.length}. Set LINGEE_BROWSER_INSTANCE_ID.`);
 
 const bridge = await connectBridge({ instanceId: selected.instanceId });
 const server = http.createServer(serveFixture);
@@ -82,6 +82,12 @@ try {
 
   assert.equal(await checked("browser.locatorCount", () => bridge.call("browser.locatorCount", { tabId, locator: { css: ".locator-query-item" } })), 2);
   assert.deepEqual(await checked("browser.locatorAllTextContents", () => bridge.call("browser.locatorAllTextContents", { tabId, locator: { css: ".locator-query-item" }, maxResults: 10 })), ["查询文本 Alpha", "查询文本 Beta"]);
+  const locatorDescriptors = await checked("browser.locatorDescribeAll", () => bridge.call("browser.locatorDescribeAll", { tabId, locator: { css: ".locator-query-item" }, maxResults: 10 }));
+  assert.equal(locatorDescriptors.length, 2);
+  assert.equal(locatorDescriptors[0].text, "查询文本 Alpha");
+  const locatorState = await checked("browser.locatorState", () => bridge.call("browser.locatorState", { tabId, locator: { testId: "native-fill" } }));
+  assert.equal(locatorState.tag, "input");
+  assert.equal(locatorState.visible, true);
   assert.equal(await checked("browser.locatorInnerText", () => bridge.call("browser.locatorInnerText", { tabId, locator: { testId: "locator-query-first" } })), "查询文本 Alpha");
   assert.equal(await checked("browser.locatorTextContent", () => bridge.call("browser.locatorTextContent", { tabId, locator: { testId: "locator-query-hidden" } })), "查询文本 Beta");
   assert.equal(await checked("browser.locatorGetAttribute", () => bridge.call("browser.locatorGetAttribute", { tabId, locator: { testId: "locator-query-first" }, name: "data-query-kind" })), "first");

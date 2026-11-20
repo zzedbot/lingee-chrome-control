@@ -214,7 +214,8 @@ function extensionForMime(mimeType) {
 }
 
 function safeFileName(value) {
-  const cleaned = String(value || "resource").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/g, "").slice(0, 120);
+  const visible = Array.from(String(value || "resource"), (character) => character.codePointAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? "_" : character).join("");
+  const cleaned = visible.replace(/[. ]+$/g, "").slice(0, 120);
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "resource.bin";
 }
 

@@ -3,18 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lingee Chrome Agent Bridge Settings</title>
+    <title>Lingee Browser Agent Bridge Settings</title>
     <link rel="stylesheet" href="ui.css" />
   </head>
   <body>
     <main class="wide">
-      <h1>Lingee Chrome Agent Bridge Settings</h1>
+      <h1>Lingee Browser Agent Bridge Settings</h1>
       <p>The native host enforces the authoritative allowlist. These settings add a second extension-side blocklist.</p>
       <label><input id="enabled" type="checkbox" /> Enable browser control</label>
       <label for="blocked">Extension-side blocked hosts, one per line</label>
       <textarea id="blocked" rows="10" placeholder="bank.example.com"></textarea>
       <button id="save" type="button">Save</button>
       <p id="message" role="status"></p>
+      <section class="permission-panel" aria-labelledby="optional-permissions-heading">
+        <h2 id="optional-permissions-heading">Optional sensitive metadata</h2>
+        <p>These Chrome permissions are off by default. Granting one here does not enable agent access by itself; the Native Host still requires separate explicit approval.</p>
+        <div class="permission-row">
+          <div><strong>Bookmarks</strong><small>Allow explicitly requested, read-only bookmark searches.</small></div>
+          <button id="bookmarks-permission" type="button" data-permission="bookmarks">Checking…</button>
+        </div>
+        <div class="permission-row">
+          <div><strong>History</strong><small>Allow explicitly requested, read-only browser history searches.</small></div>
+          <button id="history-permission" type="button" data-permission="history">Checking…</button>
+        </div>
+        <p id="permission-message" role="status"></p>
+      </section>
     </main>
     <script type="module" src="options.js"></script>
   </body>

@@ -34,6 +34,9 @@ export async function diagnoseBridgeInstances(options = {}) {
 export function toPublicBridgeInstance(descriptor) {
   const instance = {};
   for (const [field, type] of [
+    ["product", "string"],
+    ["browserFamily", "string"],
+    ["browserTarget", "string"],
     ["instanceId", "string"],
     ["pid", "number"],
     ["transport", "string"],
@@ -105,12 +108,12 @@ async function discoverBridgeDescriptors({
 export async function connectBridge({ instanceId, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, cleanupStale = true, sessionId } = {}) {
   const { instances } = await discoverBridgeDescriptors({ cleanupStale });
   const descriptor = instanceId ? instances.find((item) => item.instanceId === instanceId) : instances[0];
-  if (!descriptor) throw Object.assign(new Error("No running Lingee Chrome Agent Bridge instance was found. Open Chrome and enable the extension."), { code: "BRIDGE_NOT_FOUND" });
+  if (!descriptor) throw Object.assign(new Error("No running Lingee Browser Agent Bridge instance was found. Open the supported browser and enable the extension."), { code: "BRIDGE_NOT_FOUND" });
   return new BridgeClient(descriptor, timeoutMs, sessionId);
 }
 
 export class BridgeClient {
-  constructor(descriptor, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, sessionId = process.env.UNIVERSAL_BROWSER_SESSION_ID || crypto.randomUUID()) {
+  constructor(descriptor, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, sessionId = process.env.LINGEE_BROWSER_SESSION_ID || crypto.randomUUID()) {
     this.descriptor = descriptor;
     this.timeoutMs = timeoutMs;
     this.nextId = 1;

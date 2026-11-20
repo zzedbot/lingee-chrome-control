@@ -1,6 +1,6 @@
-# Lingee Chrome Control Web Fixture
+# Lingee Browser Control Web Fixture
 
-This deterministic local site exercises every standard Lingee Chrome Control capability that has a visible web-page representation, the complete official KDesign demo-bearing component catalog, and every public KDesign Pro page template in the inspected upstream revision.
+This deterministic local site exercises every standard Lingee Browser Control capability that has a visible web-page representation, the complete official KDesign demo-bearing component catalog, and every public KDesign Pro page template in the inspected upstream revision.
 
 ## Run
 
@@ -28,7 +28,7 @@ The fixture never asks for real credentials. The login page is a local simulatio
 From the repository root:
 
 ```powershell
-npm run test:web:chrome
+npm run test:web:browser
 ```
 
 The runner uses only standard high-level Bridge methods. It verifies typed locator queries, asynchronous waits, same-origin/cross-origin/nested frames, frame freshness, SPA/full/redirect navigation, replacement of an existing React-controlled value, generic div actions, split-button menus, row selection, native checked/select controls, double-click, sequential input, session leases and tab markers, action-bound downloads, dynamic file choosers, structured console logs, pointer/dialog/tab flows, and bounded failure cases. It requires one selected live Bridge instance and already approved `127.0.0.1` and `localhost` hosts; it never edits policy. When sensitive-metadata access is disabled, history, bookmark, and download-metadata cases pass by verifying `SENSITIVE_METADATA_APPROVAL_REQUIRED` rather than enabling that separate gate.
@@ -36,7 +36,7 @@ The runner uses only standard high-level Bridge methods. It verifies typed locat
 Run the independent KDesign/KDesign Pro scenario with:
 
 ```powershell
-npm run test:chrome:kdesign
+npm run test:browser:kdesign
 ```
 
 This scenario traverses all 62 KDesign component routes and all 22 KDesign Pro template routes, validates their recorded upstream source paths, performs deeper Button, Input, Modal, Drawer, form and simulated-login interactions, and checks structured console errors after every route. It uses only the same public high-level Bridge methods and always ends its browser session.

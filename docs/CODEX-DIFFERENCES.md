@@ -14,7 +14,7 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 
 ## Architecture comparison
 
-| Area | Current Codex Chrome implementation | Lingee Chrome Agent Bridge | Difference |
+| Area | Current Codex Chrome implementation | Lingee Browser Agent Bridge | Difference |
 |---|---|---|---|
 | Browser surface | User's existing Chrome profile | User's existing Chrome profile | Equivalent |
 | Extension platform | Chrome extension | Chrome Manifest V3 extension | Equivalent role |
@@ -27,7 +27,7 @@ Because the OpenAI extension is not publicly source-licensed, exact internal equ
 | Public capability contract | Private runtime-owned capability surface | One bundled standard-capability registry drives MCP schemas and the Skill CLI gate | Lingee is public and fail-closed; protocols remain incompatible |
 | Distribution | Signed OpenAI Chrome Web Store extension and bundled proprietary plugin | Unpacked/signed local extension plus lightweight Host launcher and script requiring system Node.js 22+ | Node runtime and automatic production updates are not bundled |
 | Extension identity | OpenAI-controlled fixed ID | ID assigned to the loaded/published independent extension | Necessarily different |
-| Native host name | `com.openai.codexextension` | `org.universal_browser.bridge` | Necessarily different |
+| Native host name | `com.openai.codexextension` | `com.lingee.app.browser_agent_bridge` | Necessarily different |
 
 ## Capability comparison
 

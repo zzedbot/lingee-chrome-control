@@ -1,12 +1,18 @@
-# Lingee Chrome Agent Bridge 续作交接
+# Lingee Browser Agent Bridge 续作交接
 
-## 最新续作状态（2026-11-15，本节优先于下方历史交接）
+## 最新续作状态（2026-11-16，本节优先于下方历史交接）
 
-0.1.12/remove-after-blank-v11 已通过真实 Chrome 152 的基础 E2E，以及 10/10 轮 Surfingkeys 增强 iframe 压力回归。随后按用户指定，将产品名统一为 **Lingee Chrome Agent Bridge**，并把 `https://test.lingee.com/favicon-32x32.png` 的原始 48×48 PNG 配置为扩展和工具栏图标。0.1.17 采用用户选定的 Precision Glass 方案：受控期间常驻顶部玻璃状态条和白色双描边鼠标，接管时显示边缘扫光，点击显示双环与中心闪点，滚动显示方向胶囊，拖拽显示起点与连线。0.1.18 将普通移动调整为按距离计算的 180–360ms 动画，到达后短暂停留再点击，并在导航后的新文档恢复标签页最后坐标。0.1.19 进一步清理扩展升级后旧文档中残留的历史覆盖层。0.1.20 修复 Shadow DOM 的 `all: initial !important` 覆盖宿主定位与层级声明的问题，将覆盖层放入浏览器 top layer，并在接管、DOMContentLoaded 和顶层导航完成时重试注入，避免早期注入竞态导致箭头缺失。0.1.21 将新建箭头无动画定位到视口中心后才恢复移动过渡，避免初始化时从左上角滑入或逻辑坐标先于实际画面。0.1.22 将动画与真实输入改为强绑定：同一标签页操作串行执行，覆盖层反馈须完成浏览器绘制并复核 top layer、坐标及顶层 documentId 后才派发输入；导航竞态或覆盖层失效时拒绝派发。原有居中、视口 resize 锚定、宿主自恢复和 detach 清理逻辑继续保留。Native Messaging 主机名等内部兼容标识保持不变。
+0.2.2 增加动作前短暂反馈观察，可在 Message/Toast/Notification 消失后仍返回受限文本证据；Action Intent 绑定顶层文档并在后续受控填写、开关点击或导航后失效；业务字段 `fieldLabel` 可直接参与 label Locator；Windows CLI 禁止位置参数内联 JSON，统一使用 stdin/file。保存反馈仍只是辅助证据，记录 ID、列表行或重新打开读回才构成持久化验收。
 
-- `src/version.mjs` 让 Host/MCP 版本统一来自 package.json；当前源码版本为 0.1.32，继续使用 `overlay-v13` 和 `pointerInput: bounded-pointer-v3`，并使用 `locatorQueries: codex-read-v1`、`frameLocators: isolated-world-v1`、`navigationWaits: navigation-v1`、`highLevelLifecycle: codex-lifecycle-v1`、`sessionClipboard: host-memory-v1`、`viewportEmulation: viewport-v1`、`observedResourceExport: resource-export-v1`、`actionIntents: action-intent-v1`、`observationFreshness: observation-v1` 与 `formControls: verified-fill-v3` 标记。安装器使用带构建哈希的目录，避免覆盖运行中的 Host。
+0.2.1 增加 CLI 自描述与错误方法建议、截图直接落盘、结构化 locator 描述/状态、通用可点击元素 DOM 观察、金蝶记录动作意图，以及逐字段回读和持久化验证配方。下方 0.2.0 内容保留为品牌迁移历史。
+
+0.2.0 已执行无兼容期的 Browser 品牌硬迁移：产品名为 **Lingee Browser Agent Bridge**，Skill 为 `lingee-browser-control`，Native Host 为 `com.lingee.app.browser_agent_bridge`，MCP 示例名为 `lingeeBrowser`，环境变量统一为 `LINGEE_BROWSER_*`，运行目录统一为 `Lingee/BrowserAgentBridge`。旧 Host、旧环境变量、旧运行目录和旧 Skill 名称均不提供运行时回退；当前发行仍是 Google Chrome/Chromium 适配器。
+
+0.1.12/remove-after-blank-v11 已通过真实 Chrome 152 的基础 E2E，以及 10/10 轮 Surfingkeys 增强 iframe 压力回归。随后按用户指定，将产品名统一为 **Lingee Browser Agent Bridge**，并把 `https://test.lingee.com/favicon-32x32.png` 的原始 48×48 PNG 配置为扩展和工具栏图标。0.1.17 采用用户选定的 Precision Glass 方案：受控期间常驻顶部玻璃状态条和白色双描边鼠标，接管时显示边缘扫光，点击显示双环与中心闪点，滚动显示方向胶囊，拖拽显示起点与连线。0.1.18 将普通移动调整为按距离计算的 180–360ms 动画，到达后短暂停留再点击，并在导航后的新文档恢复标签页最后坐标。0.1.19 进一步清理扩展升级后旧文档中残留的历史覆盖层。0.1.20 修复 Shadow DOM 的 `all: initial !important` 覆盖宿主定位与层级声明的问题，将覆盖层放入浏览器 top layer，并在接管、DOMContentLoaded 和顶层导航完成时重试注入，避免早期注入竞态导致箭头缺失。0.1.21 将新建箭头无动画定位到视口中心后才恢复移动过渡，避免初始化时从左上角滑入或逻辑坐标先于实际画面。0.1.22 将动画与真实输入改为强绑定：同一标签页操作串行执行，覆盖层反馈须完成浏览器绘制并复核 top layer、坐标及顶层 documentId 后才派发输入；导航竞态或覆盖层失效时拒绝派发。原有居中、视口 resize 锚定、宿主自恢复和 detach 清理逻辑继续保留。Native Messaging 主机名等内部兼容标识保持不变。
+
+- `src/version.mjs` 让 Host/MCP 版本统一来自 package.json；当前源码版本为 0.2.0，继续使用 `overlay-v13` 和 `pointerInput: bounded-pointer-v3`，并使用 `locatorQueries: codex-read-v1`、`frameLocators: isolated-world-v1`、`navigationWaits: navigation-v1`、`highLevelLifecycle: codex-lifecycle-v1`、`sessionClipboard: host-memory-v1`、`viewportEmulation: viewport-v1`、`observedResourceExport: resource-export-v1`、`actionIntents: action-intent-v1`、`observationFreshness: observation-v1` 与 `formControls: verified-fill-v3` 标记。安装器使用带构建哈希的目录，避免覆盖运行中的 Host。
 - `extension/virtual-cursor.js` 使用封闭 Shadow DOM、无命中测试的顶层覆盖层，detach 时清理。当前 Precision Glass 实现使用按距离计算的可见移动，并由后台保存每个受控标签页最后坐标以支持导航恢复。动作与动画强绑定；覆盖层未成功绘制时动作会失败关闭。
-- 浏览器控制 Skill 已更名为 `lingee-chrome-control`，UI 显示名为 `Lingee Chrome Control`。Skill 内置公共 Bridge Client、完整 0.1.32 解包扩展、同 ID 的签名 CRX3，以及匹配的轻量 Native Host 启动器和脚本，不依赖源码仓库或 `npm install`；目标机器需预装 Node.js 22+，Node 本体不再打包。CLI 使用 `UNIVERSAL_BROWSER_SESSION_ID` 保持跨调用会话，MCP 进程自动保持稳定会话。
+- 浏览器控制 Skill 已更名为 `lingee-browser-control`，UI 显示名为 `Lingee Browser Control`。Skill 内置公共 Bridge Client、唯一 0.2.0 签名 CRX3，以及匹配的轻量 Native Host 启动器和脚本；不再重复打包 unpacked 扩展源码，不依赖源码仓库或 `npm install`。目标机器需预装 Node.js 22+，Node 本体不再打包。CLI 使用 `LINGEE_BROWSER_SESSION_ID` 保持跨调用会话，MCP 进程自动保持稳定会话。
 - Skill 的标准控制契约允许高层 MCP 和 bundled CLI 两种等价调用方式，但要求整个任务期间不得切换到 raw CDP、页面脚本、DevTools、平台自带浏览器工具或其他控制适配器。标准 MCP 不发布 `browser_cdp`/`policy_allow_cdp_method`，Skill CLI 使用高层 Bridge 方法白名单并在连接 Chrome 前以 `NONSTANDARD_BROWSER_CONTROL_BLOCKED` 拒绝 raw、未知或未来未审查的方法。底层 raw Bridge API仅保留给非 Skill 开发用途。
 - 标准能力清单已收敛到 Skill 内置的 `scripts/runtime/standard-capabilities.mjs`：MCP schema、CLI 门禁和工具参考契约测试共同读取这一注册表。每项能力同时记录作用域、`tabId` 要求、输入副作用、敏感元数据要求和超时类别；新增高层能力不再维护两份手工白名单。
 - TODO 第 02～11 项已完成 0.1.27 自动化、真实 Chrome、KDesign/KDesign Pro 专项和清理验收。TODO 标题已同步为“已完成”。
@@ -17,7 +23,8 @@
 - TODO 第 16 项已完成 0.1.31 实现与验收：视口截图返回 30 秒 observation ID，坐标移动、点击、拖拽、滚轮和滚动必须携带最新 observation；导航、viewport、窗口、页面 DOM/布局或任何后续指针动作都会使旧观测失效。证据排除 Lingee 自身覆盖层，并将观测、虚拟鼠标反馈、真实输入和结果统一到 operation sequence。真实 Chrome 已验证旧 observation 被拒绝。
 - TODO 第 17 项已完成：Browser Use 差距文档按“对齐/部分对齐/有意不实现”复核；标准 Skill 继续阻断 raw CDP、页面脚本和未知方法。点击定位新增最多 2 秒的稳定几何与实际命中点等待，修复 KDesign Rate 路由切换期间偶发输入落空。149/149 自动化测试、33 项能力预检、基础真实 Chrome E2E、62 个 KDesign 组件、22 个 KDesign Pro 页面及 158 项专项检查均通过。CRX3 与解包源码 20/20 文件一致。
 - 0.1.32 修复 React/KDesign 受控输入已有值替换：使用原生 `selectAll` 编辑命令后原子插入，并在返回前核对最终值，失配时以 `CONTROL_STATE_MISMATCH` 失败关闭。真实 iERP“铁路局”基础资料已在零截图、零坐标、零页面脚本条件下完成新增、修改、保存、提交、审核、反审核和经结构化意图确认的删除；Skill 新增通用 div、重复文本消歧、分裂按钮、表格行选择和删除确认工作流。
-- 最终产物：`releases/lingee-chrome-agent-bridge-0.1.31.crx`（SHA-256 `32744e2bafda0510a5dd5c0c3ceb514f52888d64fbc45ff0d20434f7ead28220`）与 `dist/lingee-chrome-control-skill-0.1.31.zip`（SHA-256 `76948985c6f68d4aa7b639acc8feb3e01699c664a62e578f9130d95b4350bbfe`）。Skill ZIP 内含匹配 CRX、完整解包扩展和依赖目标机 Node.js 22+ 的轻量 Native Host；仓库 Skill、已安装 Skill 和 ZIP 均通过 Skill Creator 校验。
+- 0.1.33 将资源复合键改为 JSON 元组编码，并通过字符码判断清理文件名中的 C0 控制字符，移除 `\\u0000`/`\\u001f` 源码转义及静态扫描误报。Skill 仅保留当前签名 CRX，不再内置 `assets/chrome-extension`。
+- 最终产物：`releases/lingee-browser-agent-bridge-0.1.31.crx`（SHA-256 `32744e2bafda0510a5dd5c0c3ceb514f52888d64fbc45ff0d20434f7ead28220`）与 `dist/lingee-browser-control-skill-0.1.31.zip`（SHA-256 `76948985c6f68d4aa7b639acc8feb3e01699c664a62e578f9130d95b4350bbfe`）。Skill ZIP 内含匹配 CRX、完整解包扩展和依赖目标机 Node.js 22+ 的轻量 Native Host；仓库 Skill、已安装 Skill 和 ZIP 均通过 Skill Creator 校验。
 - 新增 `test/web-fixture` 完整网页测试站点：固定使用 KDesign 1.8.74，包含标准能力实验室、官方仓库 62 个带示例 KDesign 组件的独立路由，以及 KDesign Pro 官方源码树 22 个页面模板的本地确定性适配。`capability-cases.mjs` 与注册表做全量覆盖校验；`scripts/web-fixture-e2e.mjs` 和 `scripts/kdesign-e2e.mjs` 只使用标准高层 Bridge 方法执行真实 Chrome 回归，不自行修改策略；敏感元数据关闭时验证授权门禁。
 - 网页回归已扩展为真实点击确认框与输入框、下载完成事件、长页面终点、导航链接、新标签链接、刷新计数和 iframe `Frame target` 回显；测试站点的 iframe 会把固定测试结果回传到父页，便于通过 `browser.readText` 验证。点击触发整页导航时，后台在确认 documentId 已变化后返回 `navigationStarted` 并在新文档恢复鼠标，避免把已经生效的点击因旧文档动画无法绘制而误报失败。0.1.29 终验同时修正测试脚本三处问题：拖拽和滚轮必须先把目标语义滚入视口后读取新坐标，KDesign Pro 表单必须填写必填主题并等待 React 状态完成。
 - E2E 在打开标签页前检查 Host/扩展版本及兼容性标记；输出运行版本证据。外部 frame 检查改为读取测试页自行呈现的中和状态，不调用原始 CDP。
@@ -86,8 +93,8 @@ flowchart LR
 | `src/bridge-client.mjs` | 实例发现、陈旧描述文件处理、实例选择、本地 JSON-RPC 客户端 |
 | `src/mcp-server.mjs` | MCP stdio 工具适配 |
 | `src/policy.mjs` | 站点许可/阻止、敏感元数据开关、CDP 方法许可 |
-| `scripts/chrome-e2e.mjs` | 本机真实 Chrome 端到端测试夹具 |
-| `skills/lingee-chrome-control/` | 跨工具通用 Skill、调用脚本、诊断脚本及安全/工具/排障参考 |
+| `scripts/browser-e2e.mjs` | 本机真实 Chrome 端到端测试夹具 |
+| `skills/lingee-browser-control/` | 跨工具通用 Skill、调用脚本、诊断脚本及安全/工具/排障参考 |
 
 ## 3. 本轮已经完成
 
@@ -116,7 +123,7 @@ flowchart LR
 - 新增真实浏览器 E2E 脚本，覆盖：启动本地页面、授权、打开标签、claim、读取 DOM、点击、验证结果、清理。
 - 可选外部扩展 frame 回归测试通过环境变量启用。
 - README、架构、安全、Codex 差异以及 Skill 的工具/安全/排障说明已经更新。
-- 仓库 Skill 已同步到 `C:\Users\fcliq\.codex\skills\lingee-chrome-control`；此前同步后哈希一致。
+- 仓库 Skill 已同步到 `C:\Users\fcliq\.codex\skills\lingee-browser-control`；此前同步后哈希一致。
 - 最新自动化结果：`npm run check` 通过，`npm test` 为 56/56 通过，`git diff --check` 无错误。
 
 ## 4. 当前精确断点
@@ -196,14 +203,14 @@ foreach ($name in $names) {
 
 ```powershell
 Remove-Item Env:UNIVERSAL_CHROME_BRIDGE_ROOT -ErrorAction SilentlyContinue
-node 'C:\Users\fcliq\.codex\skills\lingee-chrome-control\scripts\invoke.mjs' instances
+node 'C:\Users\fcliq\.codex\skills\lingee-browser-control\scripts\invoke.mjs' instances
 ```
 
 选择新实例后调用：
 
 ```powershell
-$env:UNIVERSAL_BROWSER_INSTANCE_ID = '<新的实例 ID>'
-node 'C:\Users\fcliq\.codex\skills\lingee-chrome-control\scripts\invoke.mjs' call browser.getInfo '{}'
+$env:LINGEE_BROWSER_INSTANCE_ID = '<新的实例 ID>'
+node 'C:\Users\fcliq\.codex\skills\lingee-browser-control\scripts\invoke.mjs' call browser.getInfo '{}'
 ```
 
 必须确认扩展版本为 `0.1.2`，并出现类似以下兼容性标记：
@@ -220,8 +227,8 @@ node 'C:\Users\fcliq\.codex\skills\lingee-chrome-control\scripts\invoke.mjs' cal
 ### 第四步：执行基础真实浏览器 E2E
 
 ```powershell
-$env:UNIVERSAL_BROWSER_INSTANCE_ID = '<新的实例 ID>'
-node scripts/chrome-e2e.mjs
+$env:LINGEE_BROWSER_INSTANCE_ID = '<新的实例 ID>'
+node scripts/browser-e2e.mjs
 ```
 
 脚本会启动本地 HTTP 夹具并自动清理其标签页和服务器。根据 `browser.claimTab/<阶段>` 定位失败：
@@ -242,8 +249,8 @@ node scripts/chrome-e2e.mjs
 确认 URL 后执行：
 
 ```powershell
-$env:UNIVERSAL_BROWSER_E2E_FOREIGN_FRAME_URL = 'chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/<已确认的公开页面>'
-npm run test:chrome:foreign-frame
+$env:LINGEE_BROWSER_E2E_FOREIGN_EXTENSION_URL = 'chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/<已确认的公开页面>'
+npm run test:browser:foreign-frame
 ```
 
 该测试必须证明 frame 被中和，同时普通 DOM 读取、点击及结果验证仍成功。
@@ -286,12 +293,12 @@ npm run test:chrome:foreign-frame
  M extension/manifest.json
  M package-lock.json
  M package.json
- M skills/lingee-chrome-control/references/security.md
- M skills/lingee-chrome-control/references/tools.md
- M skills/lingee-chrome-control/references/troubleshooting.md
+ M skills/lingee-browser-control/references/security.md
+ M skills/lingee-browser-control/references/tools.md
+ M skills/lingee-browser-control/references/troubleshooting.md
 ?? extension/debugger-controller.js
 ?? extension/foreign-frame-monitor.js
-?? scripts/chrome-e2e.mjs
+?? scripts/browser-e2e.mjs
 ?? test/debugger-controller.test.mjs
 ?? test/foreign-frame-monitor.test.mjs
 ?? docs/HANDOFF.md
@@ -316,5 +323,5 @@ npm run test:chrome:foreign-frame
 ## 10. 新会话可直接使用的续作提示
 
 ```text
-请读取 E:\AI\codex\workspace\chrome\docs\HANDOFF.md，并从“当前精确断点”继续。使用 lingee-chrome-control Skill。先确认工作区和部署副本，不要重置未提交修改；重启本轮测试 Chrome 后验证 browser.getInfo 为 0.1.2 且包含兼容性标记，再运行基础真实 Chrome E2E。根据 browser.claimTab 的阶段化错误修复根因，然后完成经 manifest 验证的外部扩展 frame 回归测试。全程保持现有安全策略，最终让独立子代理审查，并运行 check、全部测试和 git diff --check。
+请读取 E:\AI\codex\workspace\chrome\docs\HANDOFF.md，并从“当前精确断点”继续。使用 lingee-browser-control Skill。先确认工作区和部署副本，不要重置未提交修改；重启本轮测试 Chrome 后验证 browser.getInfo 为 0.1.2 且包含兼容性标记，再运行基础真实 Chrome E2E。根据 browser.claimTab 的阶段化错误修复根因，然后完成经 manifest 验证的外部扩展 frame 回归测试。全程保持现有安全策略，最终让独立子代理审查，并运行 check、全部测试和 git diff --check。
 ```

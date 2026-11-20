@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Alert, Anchor, Breadcrumb, Button, Card, Checkbox, Collapse, Empty, Form, Input, InputNumber,
-  Pagination, Radio, Select, Step, Steps, Table, Tabs, Tag, Tree
+  Message, Pagination, Radio, Select, Step, Steps, Table, Tabs, Tag, Tree
 } from "@kdcloudjs/kdesign";
 import { KDESIGN_PRO_CATEGORIES, KDESIGN_PRO_TEMPLATES, OFFICIAL_BASELINE } from "./official-catalog.js";
 import { TestLabShell } from "./TestLabShell.jsx";
@@ -111,7 +111,7 @@ function FormTemplate({ variant }) {
   else if (variant === "vertical") content = <Tabs tabPosition="left" defaultActiveKey="basic"><Tabs.TabPane tab="基本信息" key="basic">{formBody}</Tabs.TabPane><Tabs.TabPane tab="附件信息" key="files"><Empty description="暂无附件" /></Tabs.TabPane></Tabs>;
   else if (variant === "preview") content = <div className="pro-preview-form"><ProPanel title="表单配置">{formBody}</ProPanel><Card title="实时预览"><p><strong>采购申请</strong></p><p>金额：¥ 1,000</p><p>状态：草稿</p></Card></div>;
   else content = <Collapse defaultActiveKey={["basic"]}><Collapse.Panel header="基本信息" panelKey="basic">{formBody}</Collapse.Panel><Collapse.Panel header="其他信息" panelKey="other"><Checkbox>需要加急处理</Checkbox></Collapse.Panel></Collapse>;
-  return <ProPage title={formTitle(variant)} subtitle={`官方 typical/form/${variant} 布局`}><Form layout="vertical" onFinish={() => setSaved(true)}><div className="pro-operation"><Button data-testid="pro-form-submit" type="primary" htmlType="submit">提交申请</Button><Button>保存草稿</Button></div>{content}</Form><output data-testid="pro-form-result">{saved ? "申请已提交" : "等待提交"}</output></ProPage>;
+  return <ProPage title={formTitle(variant)} subtitle={`官方 typical/form/${variant} 布局`}><Form layout="vertical" onFinish={() => { setSaved(true); Message.success("申请提交成功"); }}><div className="pro-operation"><Button data-testid="pro-form-submit" type="primary" htmlType="submit">提交申请</Button><Button>保存草稿</Button></div>{content}</Form><output data-testid="pro-form-result">{saved ? "申请已提交" : "等待提交"}</output></ProPage>;
 }
 
 function ExceptionTemplate({ code }) {

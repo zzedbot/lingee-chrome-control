@@ -21,7 +21,7 @@ export function createObservedResourceCatalog(createId = () => crypto.randomUUID
     for (const raw of root.resources) {
       const resource = normalizeResource(raw);
       if (!resource) continue;
-      const key = `${resource.url}\u0000${resource.type}`;
+      const key = JSON.stringify([resource.url, resource.type]);
       let resourceId = state.idByKey.get(key);
       if (!resourceId) {
         resourceId = `resource-${createId()}`;
@@ -89,7 +89,8 @@ function suggestedFilename(value, mimeType) {
   const url = new URL(value);
   let base = "resource";
   try { base = decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) || "resource"); } catch {}
-  base = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/g, "").slice(0, 120) || "resource";
+  base = Array.from(base, (character) => character.codePointAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? "_" : character).join("");
+  base = base.replace(/[. ]+$/g, "").slice(0, 120) || "resource";
   if (/\.[A-Za-z0-9]{1,10}$/.test(base)) return base;
   const extension = ({ "text/css": ".css", "text/javascript": ".js", "application/javascript": ".js", "application/json": ".json", "image/png": ".png", "image/jpeg": ".jpg", "image/svg+xml": ".svg", "text/plain": ".txt", "text/vtt": ".vtt" }[mimeType] || ".bin");
   return `${base}${extension}`;

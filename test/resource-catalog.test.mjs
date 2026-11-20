@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createObservedResourceCatalog, OBSERVED_RESOURCE_LIMITS, resourceContentByteSize } from "../extension/resource-catalog.js";
+import { readFile } from "node:fs/promises";
 
 test("observed resource catalog binds opaque IDs to one current HTTP document", () => {
   let nextId = 0;
@@ -38,6 +39,14 @@ test("resource content byte sizing handles UTF-8 and canonical Base64", () => {
   assert.equal(resourceContentByteSize("灵基", false), 6);
   assert.equal(resourceContentByteSize("AQID", true), 3);
   assert.throws(() => resourceContentByteSize("not base64", true), { code: "RESOURCE_CONTENT_INVALID" });
+});
+
+test("resource catalog avoids invisible-character escapes while preserving filename sanitization", async () => {
+  const source = await readFile(new URL("../extension/resource-catalog.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\\u00(?:00|1f)/i);
+  const catalog = createObservedResourceCatalog(() => "stable");
+  const listed = catalog.list(resourceTree("loader-a", [{ url: "https://example.test/a%00b%1Fc.txt", type: "Other", mimeType: "text/plain" }]));
+  assert.equal(listed.resources[0].suggestedFilename, "a_b_c.txt");
 });
 
 function resourceTree(loaderId, resources) {

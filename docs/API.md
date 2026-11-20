@@ -27,7 +27,7 @@ The blocklist always takes precedence over the allowlist and `allowAll`.
 
 | Method | Required parameters |
 |---|---|
-| `browser.getInfo` | — |
+| `browser.getInfo` | —; returns backend identity, capabilities, compatibility markers, and optional history/bookmark permission booleans |
 | `browser.listTabs` | — |
 | `browser.getTab` | `tabId` |
 | `browser.openTab` | `url` |
@@ -49,6 +49,8 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 |---|---|---|
 | `browser.readText` | `tabId` | URL, title, visible body text |
 | `browser.domSnapshot` | `tabId` | Compact interactive-node snapshot |
+| `browser.locatorDescribeAll` | `tabId`, `locator`; optional `framePath`, bounds | Bounded descriptors for all matches, including field label/value/state and stable attributes |
+| `browser.locatorState` | `tabId`, `locator`; optional `framePath`, text bound | One unique element's current semantic, form, visibility and geometry state |
 | `browser.locatorCount` | `tabId`, `locator` | Number of matching elements, including hidden elements |
 | `browser.locatorAllTextContents` | `tabId`, `locator` | Bounded text-content array for all matches |
 | `browser.locatorInnerText` | `tabId`, `locator` | Bounded rendered text from one unique match |
@@ -60,6 +62,7 @@ Unapproved entries returned by `browser.listTabs` and `browser.getTab` are redac
 | `browser.waitForURL` | `tabId`, `url` | Exact, contains, or glob URL wait with optional load-state gate |
 | `browser.waitForLoadState` | `tabId`, `state` | Wait for commit, DOM content, load, or bounded network idle |
 | `browser.expectNavigation` | `tabId`, `action` | Run a reviewed high-level action after registering its navigation expectation |
+| `browser.performAndWaitForFeedback` | `tabId`, click `action`, expected `text` | Register a bounded DOM observer before the visible action and return the first matching transient feedback even if it later disappears |
 | `browser.check` / `browser.uncheck` / `browser.setChecked` | `tabId`, `locator` | Set and verify native checkbox/radio state with visible input |
 | `browser.selectOption` | `tabId`, `locator`, `options` | Select native options by value, label, or index and verify values |
 | `browser.doubleClick` / `browser.pressSequentially` | `tabId`, `locator` | Strongly bound double click or bounded character-by-character input |
@@ -126,11 +129,13 @@ This clipboard is Native Host memory keyed by the non-secret Bridge `sessionId`;
 
 | Method | Parameters | Result |
 |---|---|---|
-| `browser.prepareActionIntent` | `tabId`, `actionType`, `summary`, exact nested `action`; optional `dataTypes` | A tab/origin/action/session-bound intent with risk class, expiry and confirmation state |
+| `browser.prepareActionIntent` | `tabId`, `actionType`, `summary`, exact nested `action`; optional `dataTypes` | A tab/origin/document/action/session-bound intent with risk class, expiry and confirmation state |
 | `browser.confirmActionIntent` | `intentId`, `decision`; optional `rememberForSession` | Confirmed or rejected intent state without executing it |
 | `browser.executeActionIntent` | `intentId` | The consumed intent and exact high-level action result |
 
-Action types are `upload`, `message-send`, `delete`, `payment`, `permission-change`, `login`, and `browser-permission`. Risk classes are `reversible-write`, `irreversible-write`, and `sensitive-data-transfer`. Executing a pending intent fails with machine-readable `ACTION_CONFIRMATION_REQUIRED`; confirmed intents are single-use and expire after five minutes. An exact scope may be remembered only for the current Bridge session and is erased by `browser.endSession` or expiry. File upload methods reject direct calls with `ACTION_INTENT_REQUIRED` and must execute through a confirmed upload intent. Generic page actions whose business meaning cannot be determined by the Host must be routed through this contract by the standard Skill.
+Action types are `upload`, `message-send`, `record-create`, `record-update`, `record-submit`, `delete`, `payment`, `permission-change`, `login`, and `browser-permission`. Risk classes are `reversible-write`, `irreversible-write`, and `sensitive-data-transfer`. Executing a pending intent fails with machine-readable `ACTION_CONFIRMATION_REQUIRED`; confirmed intents are single-use and expire after five minutes. Controlled input, switch clicks, navigation, reload, or document replacement after preparation makes the old intent fail with `ACTION_INTENT_STALE`. An exact scope may be remembered only for the current Bridge session and document and is erased by `browser.endSession` or expiry. File upload methods reject direct calls with `ACTION_INTENT_REQUIRED` and must execute through a confirmed upload intent. Generic page actions whose business meaning cannot be determined by the Host must be routed through this contract by the standard Skill.
+
+`browser.performAndWaitForFeedback` is designed for short-lived Message, Toast, Notification, `role=status`, and `role=alert` content. It installs the observer before the nested visible click and returns bounded text, role/aria-live metadata, appearance time, disappearance state, document ID, and the action result. It is supplementary evidence only; record persistence still requires an ID/status, matching list row, or deliberate reopen/readback.
 
 Each write accepts at most four unique entries and 256 KiB total. The explicit whitelist is UTF-8 `text/plain`, `text/markdown`, `text/html`, and canonical Base64 `image/png`; PNG data must have the correct signature. HTML remains inert data and is never rendered or executed. All other binary MIME types fail closed.
 
@@ -145,19 +150,19 @@ Claiming a tab renders the persistent Precision Glass overlay in its top frame b
 
 Only CDP methods in `policy.allowedCdpMethods` are accepted. Event results contain `cursor`, `hasMore`, and `truncated` fields.
 
-The `lingee-chrome-control` Skill exposes a standard high-level MCP/CLI surface. Its MCP server does not publish `policy_allow_cdp_method` or `browser_cdp`, and its bundled CLI rejects `policy.allowCdpMethod`, `browser.cdp`, unknown methods, and direct CDP method names with `NONSTANDARD_BROWSER_CONTROL_BLOCKED` before connecting to Chrome. The raw Bridge methods remain documented here for non-Skill development and are outside the Skill control contract.
+The `lingee-browser-control` Skill exposes a standard high-level MCP/CLI surface. Its MCP server does not publish `policy_allow_cdp_method` or `browser_cdp`, and its bundled CLI rejects `policy.allowCdpMethod`, `browser.cdp`, unknown methods, and direct CDP method names with `NONSTANDARD_BROWSER_CONTROL_BLOCKED` before connecting to Chrome. The raw Bridge methods remain documented here for non-Skill development and are outside the Skill control contract.
 
-The standard surface has one authoritative registry at `skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs`. The MCP schemas, bundled CLI method gate, documentation mapping test, and per-method control metadata all consume this registry. Each entry records scope, required tab context, whether it produces browser input, whether it reads sensitive metadata, and its timeout category. A method absent from the registry fails closed in the Skill CLI.
+The standard surface has one authoritative registry at `skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs`. The MCP schemas, bundled CLI method gate, documentation mapping test, and per-method control metadata all consume this registry. Each entry records scope, required tab context, whether it produces browser input, whether it reads sensitive metadata, and its timeout category. A method absent from the registry fails closed in the Skill CLI.
 
 ## Sensitive browser metadata
 
 | Method | Purpose |
 |---|---|
-| `browser.historySearch` | Chrome history search |
-| `browser.bookmarkSearch` | Bookmark search |
+| `browser.historySearch` | Chrome history search; requires optional Chrome `history` permission plus Host sensitive-metadata approval |
+| `browser.bookmarkSearch` | Bookmark search; requires optional Chrome `bookmarks` permission plus Host sensitive-metadata approval |
 | `browser.downloadsSearch` | Download metadata search |
 
-These methods fail with `SENSITIVE_METADATA_APPROVAL_REQUIRED` until explicitly enabled.
+All three methods fail with `SENSITIVE_METADATA_APPROVAL_REQUIRED` until the Host gate is explicitly enabled. History and bookmark searches can additionally fail with `OPTIONAL_PERMISSION_REQUIRED` until the user grants the matching optional browser permission from the extension settings.
 
 ## Common error codes
 

@@ -1,7 +1,7 @@
-# Lingee Chrome Control 能力补齐 TODO
+# Lingee Browser Control 能力补齐 TODO
 
 更新日期：2026-11-14
-当前基线：0.1.32 / `overlay-v13` / `codex-read-v1` / `verified-fill-v3` / `isolated-world-v1` / `navigation-v1` / `codex-lifecycle-v1` / `host-memory-v1` / `viewport-v1` / `resource-export-v1` / `action-intent-v1` / `observation-v1`
+当前基线：0.2.0 / `overlay-v13` / `codex-read-v1` / `verified-fill-v3` / `isolated-world-v1` / `navigation-v1` / `codex-lifecycle-v1` / `host-memory-v1` / `viewport-v1` / `resource-export-v1` / `action-intent-v1` / `observation-v1`
 参照对象：本机 Codex Browser Use 公开运行接口与仓库 `docs/CODEX-DIFFERENCES.md`
 
 ## 执行规则
@@ -184,6 +184,7 @@
 - [x] 0.1.30：当前文档已观察资源清单、显式选择临时 ZIP、来源/大小/会话清理边界及 MCP/CLI/Skill 契约已完成，并通过安装、重新加载、真实 Chrome 全能力及 KDesign 专项回归。
 - [x] 0.1.31：结构化 action intent、敏感操作确认、30 秒截图 observation、坐标新鲜度、统一操作序列和动作性点击等待已完成；149/149 自动化、真实 Chrome 全能力、旧观测拒绝及 KDesign/KDesign Pro 专项均通过。
 - [x] 0.1.32：受控输入已有值原子替换与最终值校验、Ctrl/Meta+A 原生编辑命令、金蝶通用 div/分裂按钮/行选择工作流及真实铁路局基础资料全生命周期零截图回归已完成。
+- [x] 0.1.33：资源目录移除不可见字符 Unicode 转义但保持控制字符清理，Skill 扩展资产收敛为唯一签名 CRX，不再重复内置 unpacked 源码。
 - [x] 01. 统一标准能力注册表。
 - [x] 第 02～11 项已通过 0.1.27 自动化、真实 Chrome E2E、独立 KDesign 专项和清理验收。
 - [x] 第 12 项已通过 0.1.28 单元、集成、MCP/CLI 契约、安装、本机版本/连接预检，以及默认拒绝、独立授权、跨会话隔离、显式清空和会话结束清理的真实门禁验收。

@@ -9,9 +9,9 @@ import { NativeMessageDecoder, encodeNativeMessage } from "../src/native-framing
 import { VERSION } from "../src/version.mjs";
 
 test("native host publishes an authenticated pipe and accepts bridge RPC", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-host-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-host-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir },
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir },
     stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => {
@@ -40,9 +40,9 @@ test("native host publishes an authenticated pipe and accepts bridge RPC", async
 });
 
 test("native host authorizes every resolved frame and keeps the resolver private", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-frame-policy-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-frame-policy-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir },
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir },
     stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => {
@@ -96,9 +96,9 @@ test("native host authorizes every resolved frame and keeps the resolver private
 });
 
 test("native host shares reads but blocks another session from mutating an owned tab", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-session-policy-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-session-policy-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -126,9 +126,9 @@ test("native host shares reads but blocks another session from mutating an owned
 });
 
 test("native host owns and cleans a child tab reported by a completed click", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-created-tab-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-created-tab-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -170,9 +170,9 @@ test("native host owns and cleans a child tab reported by a completed click", as
 });
 
 test("native host gates and isolates the memory-only session clipboard", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-clipboard-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-clipboard-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   const descriptorPath = await waitForDescriptor(path.join(taskDir, "runtime"));
@@ -201,9 +201,9 @@ test("native host gates and isolates the memory-only session clipboard", async (
 });
 
 test("native host resets temporary viewport overrides when a session ends", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-viewport-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-viewport-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -239,9 +239,9 @@ test("native host resets temporary viewport overrides when a session ends", asyn
 });
 
 test("native host preserves an explicitly retained viewport when a session ends", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-preserved-viewport-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-preserved-viewport-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -272,9 +272,9 @@ test("native host preserves an explicitly retained viewport when a session ends"
 });
 
 test("native host filters, packages, and cleans current-document resource exports", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-resource-export-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-resource-export-test-"));
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -326,11 +326,11 @@ test("native host filters, packages, and cleans current-document resource export
 });
 
 test("native host requires and consumes a machine-readable upload action intent", async (t) => {
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-action-intent-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-action-intent-test-"));
   const uploadPath = path.join(taskDir, "reviewed.txt");
   await fs.writeFile(uploadPath, "reviewed");
   const child = spawn(process.execPath, [path.resolve("src/native-host.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir }, stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => { child.stdin.end(); child.kill(); await fs.rm(taskDir, { recursive: true, force: true }); });
   child.stdin.write(encodeNativeMessage({ type: "hello", extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", extensionVersion: "test" }));
@@ -354,6 +354,9 @@ test("native host requires and consumes a machine-readable upload action intent"
   const prepareGetTab = await messages.next();
   assert.equal(prepareGetTab.method, "browser.getTab");
   child.stdin.write(encodeNativeMessage({ type: "response", id: prepareGetTab.id, result: { id: 41, url: "http://127.0.0.1/form" } }));
+  const prepareIdentity = await messages.next();
+  assert.equal(prepareIdentity.method, "_bridge.getDocumentIdentity");
+  child.stdin.write(encodeNativeMessage({ type: "response", id: prepareIdentity.id, result: { tabId: 41, documentId: "doc-form-1", url: "http://127.0.0.1/form" } }));
   const intent = await preparePromise;
   assert.equal(intent.confirmationRequired, true);
   assert.equal(intent.targetOrigin, "http://127.0.0.1");
@@ -363,6 +366,9 @@ test("native host requires and consumes a machine-readable upload action intent"
   assert.equal(confirmed.status, "confirmed");
 
   const executePromise = owner.call("browser.executeActionIntent", { intentId: intent.intentId });
+  const executeIdentity = await messages.next();
+  assert.equal(executeIdentity.method, "_bridge.getDocumentIdentity");
+  child.stdin.write(encodeNativeMessage({ type: "response", id: executeIdentity.id, result: { tabId: 41, documentId: "doc-form-1", url: "http://127.0.0.1/form" } }));
   const executeGetTab = await messages.next();
   assert.equal(executeGetTab.method, "browser.getTab");
   child.stdin.write(encodeNativeMessage({ type: "response", id: executeGetTab.id, result: { id: 41, url: "http://127.0.0.1/form" } }));

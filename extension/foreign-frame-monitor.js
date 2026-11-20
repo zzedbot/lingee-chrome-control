@@ -1,4 +1,4 @@
-export const FOREIGN_FRAME_MONITOR_KEY = "__universalBrowserForeignExtensionFrameMonitor";
+export const FOREIGN_FRAME_MONITOR_KEY = "__lingeeBrowserForeignExtensionFrameMonitor";
 
 export function installForeignFrameMonitor(markerKey, ownerExtensionId) {
   if (globalThis[markerKey]) return true;

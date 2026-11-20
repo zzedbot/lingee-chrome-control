@@ -74,16 +74,16 @@ test("read-only connection discovery retains an unreachable runtime descriptor",
 });
 
 async function withRuntimeDirectory(run) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-bridge-client-"));
-  const previousHome = process.env.UNIVERSAL_BROWSER_BRIDGE_HOME;
-  process.env.UNIVERSAL_BROWSER_BRIDGE_HOME = root;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-agent-bridge-client-"));
+  const previousHome = process.env.LINGEE_BROWSER_BRIDGE_HOME;
+  process.env.LINGEE_BROWSER_BRIDGE_HOME = root;
   try {
     const runtimeDirectory = path.join(root, "runtime");
     await fs.mkdir(runtimeDirectory);
     return await run(runtimeDirectory);
   } finally {
-    if (previousHome === undefined) delete process.env.UNIVERSAL_BROWSER_BRIDGE_HOME;
-    else process.env.UNIVERSAL_BROWSER_BRIDGE_HOME = previousHome;
+    if (previousHome === undefined) delete process.env.LINGEE_BROWSER_BRIDGE_HOME;
+    else process.env.LINGEE_BROWSER_BRIDGE_HOME = previousHome;
     await fs.rm(root, { recursive: true, force: true });
   }
 }

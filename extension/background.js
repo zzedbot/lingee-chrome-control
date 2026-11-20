@@ -10,8 +10,11 @@ import { normalizeViewportOptions, viewportResult } from "./viewport.js";
 import { createObservedResourceCatalog, OBSERVED_RESOURCE_LIMITS, resourceContentByteSize } from "./resource-catalog.js";
 import { createObservationState } from "./observation-state.js";
 import { normalizeDomSnapshot } from "./observation-evidence.js";
+import { domSnapshotExpression } from "./dom-snapshot.js";
+import { FEEDBACK_MONITOR_KEY, installFeedbackMonitor, readFeedbackMonitor, removeFeedbackMonitor } from "./feedback-monitor.js";
+import { OPTIONAL_SENSITIVE_PERMISSIONS, containsOptionalPermission } from "./optional-permissions.js";
 
-const HOST_NAME = "org.universal_browser.bridge";
+const HOST_NAME = "com.lingee.app.browser_agent_bridge";
 const CDP_VERSION = "1.3";
 const MAX_EVENTS = 1000;
 const CURSOR_MIN_MOTION_MS = 180;
@@ -283,6 +286,42 @@ async function execute(method, params) {
   if (!settings.enabled) throw codedError("EXTENSION_DISABLED", "Browser control is disabled in extension settings");
 
   switch (method) {
+    case "_bridge.getDocumentIdentity": {
+      const tabId = await authorizedTab(assertOnlyParams(params, ["tabId"]), settings);
+      const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+      if (!frame?.documentId) throw codedError("DOCUMENT_IDENTITY_UNAVAILABLE", "The current top-level document identity is unavailable");
+      const digestResult = await chrome.scripting.executeScript({
+        target: { tabId, documentIds: [frame.documentId] },
+        func: async () => {
+          const controls = [...document.querySelectorAll('input,textarea,select,[contenteditable="true"],[role="switch"],[role="checkbox"],[aria-checked]')].slice(0, 2000);
+          const state = controls.map((element, index) => {
+            const type = String(element.getAttribute("type") || "").toLowerCase();
+            const value = type === "password" ? { redactedLength: String(element.value || "").length }
+              : element instanceof HTMLSelectElement ? [...element.selectedOptions].map((option) => option.value)
+              : "value" in element ? String(element.value ?? "").slice(0, 10000)
+              : String(element.textContent || "").slice(0, 10000);
+            return {
+              index,
+              tag: element.localName,
+              id: element.id || null,
+              name: element.getAttribute("name"),
+              type,
+              value,
+              checked: typeof element.checked === "boolean" ? element.checked : null,
+              ariaChecked: element.getAttribute("aria-checked"),
+              ariaSelected: element.getAttribute("aria-selected")
+            };
+          });
+          const bytes = new TextEncoder().encode(JSON.stringify(state));
+          const digest = await crypto.subtle.digest("SHA-256", bytes);
+          return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        },
+        injectImmediately: true
+      });
+      const stateDigest = digestResult?.[0]?.result;
+      if (!/^[a-f0-9]{64}$/.test(String(stateDigest || ""))) throw codedError("DOCUMENT_STATE_UNAVAILABLE", "The current form-state digest is unavailable");
+      return { tabId, documentId: frame.documentId, stateDigest, url: frame.url };
+    }
     case "_bridge.resolveFramePath": {
       const tabId = await authorizedTab(params, settings);
       const context = await resolveFrameContext(tabId, params.framePath);
@@ -324,11 +363,12 @@ async function execute(method, params) {
     }
     case "browser.getInfo":
       return {
-        name: "Lingee Chrome Agent Bridge",
+        name: "Lingee Browser Agent Bridge",
         version: chrome.runtime.getManifest().version,
         type: "extension",
         extensionId: chrome.runtime.id,
-        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", pointerInput: "bounded-pointer-v3", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v1", formControls: "verified-fill-v3", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", highLevelLifecycle: "codex-lifecycle-v1", sessionClipboard: "host-memory-v1", viewportEmulation: "viewport-v1", observedResourceExport: "resource-export-v1", actionIntents: "action-intent-v1", observationFreshness: "observation-v1" },
+        optionalPermissions: await optionalPermissionStatus(),
+        compatibility: { foreignFrameMonitor: "remove-after-blank-v11", debuggerState: "generation-v4", monitorDiagnostics: "counts-v2", virtualCursor: "overlay-v13", pointerInput: "bounded-pointer-v3", dialogHandling: "codex-lifecycle-v3", locatorQueries: "codex-read-v3", formControls: "verified-fill-v3", frameLocators: "isolated-world-v1", navigationWaits: "navigation-v1", transientFeedback: "feedback-v1", highLevelLifecycle: "codex-lifecycle-v1", sessionClipboard: "host-memory-v1", viewportEmulation: "viewport-v1", observedResourceExport: "resource-export-v1", actionIntents: "action-intent-v3", observationFreshness: "observation-v1" },
         capabilities: capabilityList()
       };
     case "browser.listTabs":
@@ -410,11 +450,15 @@ async function execute(method, params) {
     case "browser.readText":
       return evaluateValue(await authorizedTab(params, settings), readTextExpression(params.maxChars));
     case "browser.domSnapshot":
-      return evaluateValue(await authorizedTab(params, settings), domSnapshotExpression(params));
+      return evaluateValue(await authorizedTab(assertOnlyParams(params, ["tabId", "maxNodes", "maxTextChars", "includeGenericClickable", "includeFormContext"]), settings), domSnapshotExpression(params));
     case "browser.locatorCount":
       return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath"]), settings), params.locator, "count", params, params.framePath);
     case "browser.locatorAllTextContents":
       return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxResults", "maxCharsPerItem", "maxTotalChars"]), settings), params.locator, "allTextContents", params, params.framePath);
+    case "browser.locatorDescribeAll":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxResults", "maxTextChars"]), settings), params.locator, "describeAll", params, params.framePath);
+    case "browser.locatorState":
+      return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxTextChars"]), settings), params.locator, "describe", params, params.framePath);
     case "browser.locatorInnerText":
       return queryLocator(await authorizedTab(assertOnlyParams(params, ["tabId", "locator", "framePath", "maxChars"]), settings), params.locator, "innerText", params, params.framePath);
     case "browser.locatorTextContent":
@@ -433,6 +477,8 @@ async function execute(method, params) {
       return waitForLoadState(await authorizedTab(assertOnlyParams(params, ["tabId", "state", "timeoutMs"]), settings), params.state, params.timeoutMs);
     case "browser.expectNavigation":
       return expectNavigation(assertOnlyParams(params, ["tabId", "action", "url", "match", "waitUntil", "timeoutMs"]), settings);
+    case "browser.performAndWaitForFeedback":
+      return performAndWaitForFeedback(assertOnlyParams(params, ["tabId", "action", "text", "exact", "timeoutMs", "maxTextChars"]), settings);
     case "browser.accessibilitySnapshot":
       return sendCdp(await authorizedTab(params, settings), "Accessibility.getFullAXTree", {});
     case "browser.screenshot": {
@@ -542,8 +588,10 @@ async function execute(method, params) {
     case "browser.getConsoleLogs":
       return getConsoleLogs(await authorizedTab(assertOnlyParams(params, ["tabId", "afterSequence", "limit", "levels", "text"]), settings), params);
     case "browser.historySearch":
+      await requireOptionalSensitivePermission("history");
       return chrome.history.search({ text: params.text || "", startTime: params.startTime, endTime: params.endTime, maxResults: params.maxResults || 100 });
     case "browser.bookmarkSearch":
+      await requireOptionalSensitivePermission("bookmarks");
       return chrome.bookmarks.search(params.query || params.text || "");
     case "browser.downloadsSearch":
       return chrome.downloads.search(params.query || {});
@@ -903,8 +951,9 @@ function rejectOopifWaiters(tabId, message) {
 async function showVirtualCursor(tabId, x, y, phase, details = {}, timeoutMs = POINTER_ACK_TIMEOUT_MS) {
   try {
     const previous = cursorPositionsByTab.get(tabId);
-    const effectiveX = x == null && previous ? previous.x : x;
-    const effectiveY = y == null && previous ? previous.y : y;
+    const centerAnchoredRecovery = x == null && y == null && previous?.anchoredToCenter === true;
+    const effectiveX = x == null && previous && !centerAnchoredRecovery ? previous.x : x;
+    const effectiveY = y == null && previous && !centerAnchoredRecovery ? previous.y : y;
     const results = await boundedBrowserCall(chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
       func: renderVirtualCursor,
@@ -913,7 +962,12 @@ async function showVirtualCursor(tabId, x, y, phase, details = {}, timeoutMs = P
     }), timeoutMs, "CURSOR_RENDER_TIMEOUT", "Virtual cursor rendering timed out");
     const rendered = results?.[0]?.result;
     if (Number.isFinite(rendered?.x) && Number.isFinite(rendered?.y)) {
-      cursorPositionsByTab.set(tabId, { x: rendered.x, y: rendered.y, documentId: results?.[0]?.documentId });
+      cursorPositionsByTab.set(tabId, {
+        x: rendered.x,
+        y: rendered.y,
+        documentId: results?.[0]?.documentId,
+        anchoredToCenter: x == null && y == null ? (previous?.anchoredToCenter ?? true) : false
+      });
     }
     return rendered ? { ...rendered, documentId: results?.[0]?.documentId } : rendered;
   } catch {
@@ -1650,6 +1704,50 @@ async function expectNavigation(params, settings) {
   }
 }
 
+async function performAndWaitForFeedback(params, settings) {
+  const tabId = requireTabId(params);
+  await assertTabNotBlocked(tabId, settings);
+  await ensureDebugger(tabId);
+  const action = validateBoundAction(params.action, ["browser.click", "browser.coordinateClick"]);
+  const text = requireString(params.text, "text");
+  if (text.length > 500) throw codedError("INVALID_PARAMS", "text must contain at most 500 characters");
+  const exact = params.exact === true;
+  const timeout = Math.min(boundedTimeout(params.timeoutMs, 10000), 30000);
+  const maxTextChars = Math.max(1, Math.min(Number(params.maxTextChars) || 2000, 10000));
+  const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+  if (!frame?.documentId) throw codedError("FEEDBACK_CONTEXT_UNAVAILABLE", "The current document is unavailable for feedback observation");
+  const documentId = frame.documentId;
+  const target = { tabId, documentIds: [documentId] };
+  const installed = await chrome.scripting.executeScript({
+    target,
+    func: installFeedbackMonitor,
+    args: [FEEDBACK_MONITOR_KEY, { text, exact, maxTextChars, maxEvents: 20 }],
+    injectImmediately: true
+  }).catch((error) => { throw codedError("FEEDBACK_CONTEXT_UNAVAILABLE", `Unable to install feedback observer: ${error.message || String(error)}`); });
+  if (!installed?.[0]?.result?.installed) throw codedError("FEEDBACK_CONTEXT_UNAVAILABLE", "The feedback observer did not initialize");
+
+  const startedAt = Date.now();
+  let actionResult;
+  try {
+    actionResult = await execute(action.method, { ...(action.params || {}), tabId });
+    while (Date.now() - startedAt <= timeout) {
+      const current = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+      if (!current?.documentId || current.documentId !== documentId) {
+        throw codedError("FEEDBACK_CONTEXT_CHANGED", "The document changed before matching feedback was captured", { documentId, currentDocumentId: current?.documentId || null });
+      }
+      const read = await chrome.scripting.executeScript({ target, func: readFeedbackMonitor, args: [FEEDBACK_MONITOR_KEY], injectImmediately: true });
+      const events = read?.[0]?.result?.events || [];
+      if (events.length) {
+        return { actionResult, feedback: events[0], capturedCount: events.length, documentId, elapsedMs: Date.now() - startedAt };
+      }
+      await delay(50);
+    }
+    throw codedError("FEEDBACK_TIMEOUT", `Timed out after ${timeout}ms waiting for matching page feedback`, { text, exact, timeoutMs: timeout, actionCompleted: actionResult !== undefined });
+  } finally {
+    await chrome.scripting.executeScript({ target, func: removeFeedbackMonitor, args: [FEEDBACK_MONITOR_KEY], injectImmediately: true }).catch(() => {});
+  }
+}
+
 async function waitForDownload(params, settings) {
   const tabId = requireTabId(params);
   await assertTabNotBlocked(tabId, settings);
@@ -1883,34 +1981,6 @@ function readTextExpression(maxChars = 50000) {
   return `(() => ({ url: location.href, title: document.title, text: (document.body?.innerText || "").slice(0, ${Math.max(1, Math.min(Number(maxChars) || 50000, 500000))}) }))()`;
 }
 
-function domSnapshotExpression(params) {
-  const maxNodes = Math.max(1, Math.min(Number(params.maxNodes) || 1000, 5000));
-  const maxTextChars = Math.max(100, Math.min(Number(params.maxTextChars) || 20000, 200000));
-  return `(() => {
-    const maxNodes = ${maxNodes}; const maxTextChars = ${maxTextChars};
-    const selector = (el) => {
-      if (el.id && CSS.escape) return '#' + CSS.escape(el.id);
-      const parts = []; let node = el;
-      while (node && node.nodeType === 1 && parts.length < 6) {
-        let part = node.localName; if (!part) break;
-        const parent = node.parentElement;
-        if (parent) { const peers = [...parent.children].filter(x => x.localName === node.localName); if (peers.length > 1) part += ':nth-of-type(' + (peers.indexOf(node) + 1) + ')'; }
-        parts.unshift(part); node = parent;
-      }
-      return parts.join(' > ');
-    };
-    const role = (el) => el.getAttribute('role') || ({A:'link',BUTTON:'button',INPUT: el.type === 'checkbox' ? 'checkbox' : 'textbox',SELECT:'combobox',TEXTAREA:'textbox'}[el.tagName] || null);
-    const nodes = [];
-    for (const el of document.querySelectorAll('a,button,input,select,textarea,[role],[contenteditable="true"],summary,[tabindex]')) {
-      if (nodes.length >= maxNodes) break;
-      const r = el.getBoundingClientRect(); const style = getComputedStyle(el);
-      if (r.width <= 0 || r.height <= 0 || style.visibility === 'hidden' || style.display === 'none') continue;
-      nodes.push({ selector: selector(el), tag: el.localName, role: role(el), name: (el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('placeholder') || '').trim().slice(0, 500), type: el.getAttribute('type'), disabled: !!el.disabled, checked: el.checked, rect: {x:r.x,y:r.y,width:r.width,height:r.height} });
-    }
-    return { url: location.href, title: document.title, text: (document.body?.innerText || '').slice(0, maxTextChars), nodes };
-  })()`;
-}
-
 async function resolveLocator(locator, scroll = true) {
   const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
   const implicitRole = (el) => el.getAttribute("role") || ({
@@ -1921,12 +1991,29 @@ async function resolveLocator(locator, scroll = true) {
     INPUT: el.type === "checkbox" ? "checkbox" : el.type === "radio" ? "radio" : ["button", "submit", "reset"].includes(el.type) ? "button" : "textbox"
   }[el.tagName] || null);
   const accessibleName = (el) => normalize(el.getAttribute("aria-label") || (el.labels ? [...el.labels].map((x) => x.innerText).join(" ") : "") || el.innerText || el.value || el.getAttribute("placeholder"));
+  const inferredLabel = (el) => {
+    const explicit = normalize(el.getAttribute("aria-label") || (el.labels ? [...el.labels].map((x) => x.innerText || x.textContent || "").join(" ") : ""));
+    if (explicit) return explicit;
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+      const texts = [...node.children]
+        .filter((child) => child !== el && !child.contains(el))
+        .map((child) => normalize(child.innerText || child.textContent))
+        .filter((text) => text && text.length <= 200)
+        .sort((a, b) => a.length - b.length);
+      if (texts[0]) return texts[0];
+    }
+    return "";
+  };
   let candidates;
   if (locator.css) candidates = [...document.querySelectorAll(locator.css)];
   else if (locator.testId) candidates = [...document.querySelectorAll(`[data-testid="${CSS.escape(locator.testId)}"]`)];
   else candidates = [...document.querySelectorAll("a,button,input,select,textarea,[role],[contenteditable='true'],summary,[tabindex]")];
   if (locator.role) candidates = candidates.filter((el) => implicitRole(el) === locator.role);
-  if (locator.label) candidates = candidates.filter((el) => accessibleName(el) === normalize(locator.label) || (!locator.exact && accessibleName(el).includes(normalize(locator.label))));
+  if (locator.label) candidates = candidates.filter((el) => {
+    const expected = normalize(locator.label);
+    return accessibleName(el) === expected || inferredLabel(el) === expected || (!locator.exact && (accessibleName(el).includes(expected) || inferredLabel(el).includes(expected)));
+  });
   if (locator.text) candidates = candidates.filter((el) => normalize(el.innerText || el.textContent) === normalize(locator.text) || (!locator.exact && normalize(el.innerText || el.textContent).includes(normalize(locator.text))));
   if (locator.name) candidates = candidates.filter((el) => accessibleName(el) === normalize(locator.name) || (!locator.exact && accessibleName(el).includes(normalize(locator.name))));
   candidates = candidates.filter((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; });
@@ -1968,7 +2055,16 @@ async function resolveLocator(locator, scroll = true) {
     Math.max(0, Math.min(innerHeight - 1, lastRect.top + lastRect.height / 2))
   );
   const obstructionTag = obstruction?.localName || "none";
-  const error = new Error(`LINGEE_ACTIONABILITY:${JSON.stringify({ code: "INPUT_TARGET_OBSCURED", message: "Element matched the locator but did not become stable and receive pointer events", data: { obstructionTag } })}`);
+  const error = new Error(`LINGEE_ACTIONABILITY:${JSON.stringify({
+    code: "INPUT_TARGET_OBSCURED",
+    message: "Element matched the locator but did not become stable and receive pointer events",
+    data: {
+      obstructionTag,
+      rect: { x: lastRect.x, y: lastRect.y, width: lastRect.width, height: lastRect.height },
+      viewport: { width: innerWidth, height: innerHeight },
+      pointerEvents: getComputedStyle(el).pointerEvents
+    }
+  })}`);
   error.name = "LINGEE_INPUT_TARGET_OBSCURED";
   throw error;
 }
@@ -1991,7 +2087,23 @@ function keyDefinition(key) {
 }
 
 function capabilityList() {
-  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "frameLocators", "elementWaits", "navigationWaits", "formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
+  return ["tabs", "tabGroups", "navigation", "domSnapshot", "locatorQueries", "locatorDescriptors", "frameLocators", "elementWaits", "navigationWaits", "transientFeedback", "formControls", "sessionLeases", "sessionClipboard", "viewportEmulation", "observedResourceExport", "actionIntents", "observationFreshness", "tabLifecycle", "downloadLifecycle", "fileChooserLifecycle", "consoleLogs", "accessibility", "playwrightStyleLocators", "screenshots", "coordinateInput", "virtualCursor", "drag", "input", "fileUpload", "javascriptDialogs", "downloads", "history", "bookmarks", "cdp", "events"];
+}
+
+async function requireOptionalSensitivePermission(permission) {
+  if (await containsOptionalPermission(chrome.permissions, permission)) return;
+  throw codedError(
+    "OPTIONAL_PERMISSION_REQUIRED",
+    `${permission} access requires an optional Chrome permission. Open the extension Security settings and grant ${permission} access.`,
+    { permission, settingsPage: "options.html" }
+  );
+}
+
+async function optionalPermissionStatus() {
+  return Object.fromEntries(await Promise.all(OPTIONAL_SENSITIVE_PERMISSIONS.map(async (permission) => [
+    permission,
+    await containsOptionalPermission(chrome.permissions, permission)
+  ])));
 }
 
 function requireTabId(params) {

@@ -38,9 +38,16 @@ const MUTATING_TAB_METHODS = new Set([
   "browser.click", "browser.fill", "browser.press", "browser.type", "browser.mouseMove", "browser.coordinateClick", "browser.drag", "browser.wheel", "browser.scroll", "browser.setFileInput", "browser.handleDialog", "browser.expectNavigation",
   "browser.check", "browser.uncheck", "browser.setChecked", "browser.selectOption", "browser.doubleClick", "browser.pressSequentially",
   "browser.waitForDownload", "browser.downloadMedia", "browser.waitForFileChooser", "browser.setFileChooserFiles",
+  "browser.performAndWaitForFeedback",
   "browser.setViewport", "browser.resetViewport", "browser.exportObservedResources"
 ]);
-const TAB_CREATING_METHODS = new Set(["browser.click", "browser.coordinateClick", "browser.doubleClick", "browser.press", "browser.expectNavigation", "browser.waitForDownload", "browser.downloadMedia"]);
+const TAB_CREATING_METHODS = new Set(["browser.click", "browser.coordinateClick", "browser.doubleClick", "browser.press", "browser.expectNavigation", "browser.performAndWaitForFeedback", "browser.waitForDownload", "browser.downloadMedia"]);
+const ACTION_STATE_MUTATING_METHODS = new Set([
+  "browser.navigate", "browser.back", "browser.forward", "browser.reload",
+  "browser.click", "browser.fill", "browser.press", "browser.type", "browser.coordinateClick", "browser.drag",
+  "browser.check", "browser.uncheck", "browser.setChecked", "browser.selectOption", "browser.doubleClick", "browser.pressSequentially",
+  "browser.setFileInput", "browser.setFileChooserFiles", "browser.handleDialog", "browser.expectNavigation", "browser.performAndWaitForFeedback"
+]);
 
 const server = net.createServer((socket) => {
   sockets.add(socket);
@@ -94,7 +101,7 @@ start().catch((error) => {
 async function start() {
   await fsp.mkdir(runtimeDirectory(), { recursive: true });
   ipcEndpoint = process.platform === "win32"
-    ? `\\\\.\\pipe\\universal-browser-bridge-${instanceId}`
+    ? `\\\\.\\pipe\\lingee-browser-agent-bridge-${instanceId}`
     : path.join(runtimeDirectory(), `bridge-${process.pid}.sock`);
   if (process.platform !== "win32") await fsp.rm(ipcEndpoint, { force: true });
   await new Promise((resolve, reject) => {
@@ -104,6 +111,9 @@ async function start() {
   descriptorPath = path.join(runtimeDirectory(), `bridge-${process.pid}.json`);
   const descriptor = {
     schemaVersion: 1,
+    product: "lingee-browser-agent-bridge",
+    browserFamily: "chromium",
+    browserTarget: "google",
     instanceId,
     pid: process.pid,
     transport: "local-pipe",
@@ -149,7 +159,7 @@ async function dispatch(method, params, sessionId, context = {}) {
   if (method.startsWith("_bridge.")) throw coded("METHOD_NOT_FOUND", `Unknown browser method: ${method}`);
   if (method === "bridge.getInfo") {
     return {
-      name: "Lingee Chrome Agent Bridge",
+      name: "Lingee Browser Agent Bridge",
       version: VERSION,
       instanceId,
       extensionConnected: extensionInfo != null,
@@ -193,7 +203,7 @@ async function dispatch(method, params, sessionId, context = {}) {
     if (!policy.allowSessionClipboardWrite) throw coded("SESSION_CLIPBOARD_WRITE_APPROVAL_REQUIRED", "Browser session clipboard write access is disabled by policy");
     return sessionClipboard.clear(sessionId);
   }
-  if (!extensionInfo) throw coded("EXTENSION_NOT_READY", "Chrome extension has not completed the native messaging handshake");
+  if (!extensionInfo) throw coded("EXTENSION_NOT_READY", "Browser extension has not completed the native messaging handshake");
 
   if (method === "browser.prepareActionIntent") {
     assertOnlyHostParams(params, ["tabId", "actionType", "summary", "dataTypes", "action"]);
@@ -202,7 +212,8 @@ async function dispatch(method, params, sessionId, context = {}) {
     const policy = await loadPolicy();
     const tab = await sendToExtension("browser.getTab", { tabId });
     assertTabUrlAllowed(policy, tab.url);
-    return actionIntents.prepare(sessionId, { ...params, tabId, targetOrigin: new URL(tab.url).origin });
+    const identity = await sendToExtension("_bridge.getDocumentIdentity", { tabId });
+    return actionIntents.prepare(sessionId, { ...params, tabId, documentId: identity.documentId, stateDigest: identity.stateDigest, targetOrigin: new URL(tab.url).origin });
   }
   if (method === "browser.confirmActionIntent") {
     assertOnlyHostParams(params, ["intentId", "decision", "rememberForSession"]);
@@ -210,8 +221,19 @@ async function dispatch(method, params, sessionId, context = {}) {
   }
   if (method === "browser.executeActionIntent") {
     assertOnlyHostParams(params, ["intentId"]);
-    const consumed = actionIntents.consume(sessionId, params.intentId);
-    sessionManager.assertOwner(consumed.intent.tabId, sessionId);
+    const prepared = actionIntents.inspect(sessionId, params.intentId);
+    sessionManager.assertOwner(prepared.tabId, sessionId);
+    if (prepared.status !== "confirmed") {
+      actionIntents.consume(sessionId, params.intentId, prepared.tabId, prepared.documentId, prepared.stateDigest);
+    }
+    const policy = await loadPolicy();
+    const identity = await sendToExtension("_bridge.getDocumentIdentity", { tabId: prepared.tabId });
+    assertTabUrlAllowed(policy, identity.url);
+    if (new URL(identity.url).origin !== prepared.targetOrigin) {
+      actionIntents.invalidateTab(sessionId, prepared.tabId, "origin-changed");
+      throw coded("ACTION_INTENT_STALE", "The page origin changed after this action intent was prepared", { intentId: prepared.intentId, targetOrigin: prepared.targetOrigin, currentOrigin: new URL(identity.url).origin });
+    }
+    const consumed = actionIntents.consume(sessionId, params.intentId, prepared.tabId, identity.documentId, identity.stateDigest);
     const actionResult = await dispatch(consumed.action.method, { tabId: consumed.intent.tabId, ...consumed.action.params }, sessionId, { intentAuthorized: true });
     return { intent: consumed.intent, actionResult };
   }
@@ -303,6 +325,9 @@ async function dispatch(method, params, sessionId, context = {}) {
   if (method === "browser.waitForDownload" || method === "browser.downloadMedia") assertDownloadUrlAllowed(policy, result?.download?.url);
   if (method === "browser.getConsoleLogs" && Array.isArray(result?.logs)) {
     result.logs = result.logs.map((entry) => ({ ...entry, url: sanitizeSourceUrl(policy, entry.url) }));
+  }
+  if (context.intentAuthorized !== true && ACTION_STATE_MUTATING_METHODS.has(method) && params.tabId != null) {
+    actionIntents.invalidateTab(sessionId, params.tabId, method);
   }
   if (method === "browser.listObservedResources" && Array.isArray(result?.resources)) {
     const resources = result.resources.filter((resource) => {
@@ -537,7 +562,7 @@ function rpcCoded(rpcCode, message, data) {
 }
 
 function logError(error) {
-  process.stderr.write(`[universal-browser-bridge] ${error?.stack || error}\n`);
+  process.stderr.write(`[lingee-browser-agent-bridge] ${error?.stack || error}\n`);
 }
 
 async function shutdown(exitCode) {

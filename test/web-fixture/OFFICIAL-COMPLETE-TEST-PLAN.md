@@ -4,7 +4,7 @@
 
 - KDesign：`0189097792acb7379aea32f8b20fad52045f9e28`，62 个带官方 demo 的组件目录。
 - KDesign Pro：`dc769181d12a91e9b7b39845f708b992a24b2844`，22 个公开页面模板。
-- 浏览器控制：只允许 Lingee Chrome Control 标准高层 CLI/MCP 方法；禁止 raw CDP、页面脚本和 DOM 注入。
+- 浏览器控制：只允许 Lingee Browser Control 标准高层 CLI/MCP 方法；禁止 raw CDP、页面脚本和 DOM 注入。
 
 ## 每项通过标准
 

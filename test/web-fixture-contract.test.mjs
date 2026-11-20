@@ -1,14 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { STANDARD_CAPABILITIES } from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
+import { STANDARD_CAPABILITIES } from "../skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs";
 import { CAPABILITY_CASES, coveredMethods } from "./web-fixture/capability-cases.mjs";
 import { KDESIGN_COMPONENTS, KDESIGN_PRO_TEMPLATES, OFFICIAL_BASELINE } from "./web-fixture/src/official-catalog.js";
 import { COMPONENT_TEST_MATRIX, PRO_TEST_MATRIX } from "./web-fixture/official-test-matrix.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+test("KDesign E2E help exits without starting a browser session", () => {
+  const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "kdesign-e2e.mjs"), "--help"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /KDESIGN_E2E_BATCH/);
+  assert.doesNotMatch(result.stdout + result.stderr, /open-kdesign|SITE_APPROVAL_REQUIRED|Expected exactly one Bridge instance/);
+});
 
 test("web fixture accounts for every standard MCP and CLI capability", () => {
   const expected = new Set(["instances", ...STANDARD_CAPABILITIES.map(({ method }) => method).filter(Boolean)]);

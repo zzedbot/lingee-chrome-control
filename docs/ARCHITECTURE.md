@@ -13,7 +13,7 @@ sequenceDiagram
     participant Chrome as Chrome APIs / CDP
     participant Page as Existing browser tab
 
-    Extension->>Host: connectNative(org.universal_browser.bridge)
+    Extension->>Host: connectNative(com.lingee.app.browser_agent_bridge)
     Chrome->>Host: start executable with stdio
     Extension->>Host: hello(extension ID, version)
     Host->>Host: create authenticated local pipe descriptor
@@ -42,7 +42,7 @@ Shadow roots are discovered during initial scanning and observable DOM mutations
 
 The extension uses two control planes:
 
-1. Chrome extension APIs for tabs, tab groups, history, bookmarks, downloads, and Native Messaging.
+1. Chrome extension APIs for tabs, tab groups, downloads, and Native Messaging, plus user-granted optional history and bookmark permissions.
 2. `chrome.debugger` for CDP domains such as Runtime, Page, DOM, Accessibility, and Input.
 
 The high-level locator API is implemented on top of DOM inspection plus CDP input dispatch. It intentionally exposes a smaller surface than upstream Playwright. Its typed read-only query layer mirrors the useful Codex collection/strict-query split: count and all-text operations accept collections, while inner text, text content, attribute, visibility and enabled-state operations enforce unique matches where applicable. These queries do not scroll, focus or dispatch input, and enforce bounded result sizes. Ordered frame paths resolve each iframe/frame element in a non-universal isolated world, map it to its CDP frame ID, and retain the loader chain only for the duration of one operation. Pointer coordinates are translated through each frame viewport, and every loader is revalidated before input. The Host separately authorizes every resolved cross-origin frame URL.
@@ -78,19 +78,21 @@ Descriptors are stored beneath the current user's application-data directory. Th
 
 `src/bridge-client.mjs` discovers live descriptors, removes stale descriptors, selects the newest instance by default, and sends one newline-delimited JSON-RPC request per connection.
 
-The explicit `UNIVERSAL_BROWSER_INSTANCE_ID` selection mechanism corresponds to choosing a particular Chrome extension/profile instance.
+The explicit `LINGEE_BROWSER_INSTANCE_ID` selection mechanism corresponds to choosing a particular Chrome extension/profile instance.
 
 ### MCP adapter
 
 `src/mcp-server.mjs` implements MCP over stdio. It never receives browser credentials. It maps narrowly described tools to bridge methods and converts screenshots to MCP image content.
 
-The standard high-level surface is declared once in `skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs`. The repository MCP adapter imports its schemas directly, and the installed Skill CLI imports the same bundled module for its fail-closed method gate. Contract tests render the documented tool mapping from that registry and reject MCP, CLI, or documentation drift. Raw CDP and unknown methods are intentionally absent.
+The standard high-level surface is declared once in `skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs`. The repository MCP adapter imports its schemas directly, and the installed Skill CLI imports the same bundled module for its fail-closed method gate. Contract tests render the documented tool mapping from that registry and reject MCP, CLI, or documentation drift. Raw CDP and unknown methods are intentionally absent.
 
 The browser session clipboard is deliberately implemented in the Native Host rather than through `navigator.clipboard` or operating-system APIs. Entries are held only in an in-memory map keyed by the validated Bridge session ID. Independent read and write policy gates default off; session end, expiry, and Host shutdown erase data. The Host validates the four-item/256-KiB bound, unique explicit MIME types, UTF-8 text encodings, canonical Base64, and PNG signature before storage. The extension advertises the stack capability and compatibility marker but never receives clipboard contents.
 
 Resource ZIP creation is likewise Host-owned. Archive paths are session-temporary, never derived from a caller-supplied path, and contain only bytes returned for the selected current-document opaque IDs.
 
-Consequential action intents are also Host-owned and memory-only. A prepared intent binds one approved tab, exact origin, declared action class, normalized summary/data types, exact allowlisted high-level action, session, creation/expiry time, and confirmation state. Confirmation never executes the action; execution atomically consumes it and recursively enters the same policy/lease/parameter checks. Exact-scope remembered approvals are hashed, session-local, and removed on session end. Direct file-input and captured-chooser assignment fail unless execution came from a confirmed upload intent. Other generic clicks cannot expose their business meaning to the Host, so the standard Skill/caller is responsible for declaring message, deletion, payment, permission and login intents.
+Consequential action intents are also Host-owned and memory-only. A prepared intent binds one approved tab, exact origin, top-level document ID, an extension-computed SHA-256 digest of bounded form/control state, declared action class, normalized summary/data types, exact allowlisted high-level action, session, creation/expiry time, and confirmation state. The digest is computed in the extension's isolated world; raw field values are not returned to the Host, and password controls contribute only their length. Confirmation never executes the action. A later controlled field/switch mutation or navigation marks pending/confirmed intents stale, and execution recomputes document identity and state digest before atomically consuming the intent. Exact-scope remembered approvals include document/state identity, are session-local, and are removed on session end. Direct file-input and captured-chooser assignment fail unless execution came from a confirmed upload intent. Other generic clicks cannot expose their business meaning to the Host, so the standard Skill/caller is responsible for declaring message, deletion, payment, permission and login intents.
+
+Transient feedback capture is a separate bounded high-level operation. `browser.performAndWaitForFeedback` injects a fixed observer into the approved top-level document before a reviewed click, captures only matching bounded text plus role/aria-live metadata, and removes the observer on match, timeout, or document change. It exposes no caller-supplied JavaScript. Toast evidence is returned with the action result but does not replace durable record-state verification.
 
 ### Policy
 

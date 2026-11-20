@@ -12,7 +12,40 @@ test("locator query options reject out-of-range limits before browser evaluation
   assert.throws(() => validateLocatorQueryOptions("allTextContents", { maxResults: 0 }), (error) => error.code === "INVALID_PARAMS" && error.data.field === "maxResults");
   assert.throws(() => validateLocatorQueryOptions("innerText", { maxChars: 500001 }), (error) => error.code === "INVALID_PARAMS" && error.data.field === "maxChars");
   assert.deepEqual(validateLocatorQueryOptions("allTextContents", { maxResults: 12 }), { maxResults: 12 });
+  assert.throws(() => validateLocatorQueryOptions("describeAll", { maxResults: 101 }), (error) => error.code === "INVALID_PARAMS");
 });
+
+test("locator descriptors expose bounded form context and redact passwords", () => withDom(() => {
+  const field = element({
+    tagName: "INPUT", localName: "input", type: "text", value: "Beijing Railway",
+    attributes: { name: "railwayName", placeholder: "请输入名称", "data-field": "name" }
+  });
+  const password = element({ tagName: "INPUT", localName: "input", type: "password", value: "hidden-secret" });
+  document.set(".field", [field]);
+  document.set(".password", [password]);
+  const state = runLocatorQuery({ css: ".field" }, "describe").value;
+  assert.equal(state.value, "Beijing Railway");
+  assert.equal(state.selector, 'input[name="railwayName"]');
+  assert.equal(state.attributes["data-field"], "name");
+  const redacted = runLocatorQuery({ css: ".password" }, "describe").value;
+  assert.equal(redacted.value, null);
+  assert.equal(redacted.valueRedacted, true);
+  assert.equal(runLocatorQuery({ css: ".field" }, "describeAll", { maxResults: 1 }).value.length, 1);
+}));
+
+test("label locators match inferred Kingdee field labels, not only accessible names", () => withDom(() => {
+  const field = element({ tagName: "INPUT", localName: "input", attributes: { placeholder: "编码不能为空" } });
+  const label = element({ textContent: "编码 *", innerText: "编码 *" });
+  const wrapper = element();
+  wrapper.children = [label, field];
+  wrapper.contains = (candidate) => candidate === label || candidate === field;
+  field.parentElement = wrapper;
+  label.parentElement = wrapper;
+  document.set("*", [field]);
+  const result = runLocatorQuery({ label: "编码 *", exact: true }, "describe");
+  assert.equal(result.ok, true);
+  assert.equal(result.value.fieldLabel, "编码 *");
+}));
 
 test("collection locator queries include hidden matches and enforce result bounds", () => withDom(() => {
   const visible = element({ textContent: "Alpha", innerText: "Alpha" });
@@ -76,14 +109,14 @@ function withDom(callback) {
   }
 }
 
-function element({ textContent = "", innerText = textContent, hidden = false, disabled = false, attributes = {}, style = {} } = {}) {
+function element({ textContent = "", innerText = textContent, hidden = false, disabled = false, attributes = {}, style = {}, tagName = "DIV", localName = tagName.toLowerCase(), type = "", value = "" } = {}) {
   const values = new Map(Object.entries(attributes));
   return {
-    tagName: "DIV", type: "", textContent, innerText, hidden, disabled, labels: [], value: "",
+    tagName, localName, nodeType: 1, type, textContent, innerText, hidden, disabled, labels: [], value, parentElement: null,
     style: { display: "block", visibility: "visible", opacity: "1", ...style },
     getAttribute(name) { return values.has(name) ? values.get(name) : null; },
     hasAttribute(name) { return values.has(name); },
-    getBoundingClientRect() { return { width: 20, height: 10 }; },
+    getBoundingClientRect() { return { x: 1, y: 2, width: 20, height: 10 }; },
     getClientRects() { return [{ width: 20, height: 10 }]; },
     closest() { return null; }
   };

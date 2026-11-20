@@ -48,7 +48,7 @@ function App() {
       <main>
         {cleanRoute === "#/target" ? <NavigationTarget /> : <CapabilityLab />}
       </main>
-      <footer>仅用于 Lingee Chrome Control 确定性回归；不收集或上传数据。</footer>
+      <footer>仅用于 Lingee Browser Control 确定性回归；不收集或上传数据。</footer>
     </div>
   );
 }
@@ -152,7 +152,7 @@ function CapabilityLab() {
           <button data-testid="open-file-chooser" onClick={() => chooser.current?.click()}>打开文件选择器</button>
           <button data-testid="confirm-dialog" onClick={() => setStatus(confirm("确认执行 Lingee 对话框测试？") ? "dialog:accepted" : "dialog:dismissed")}>打开确认框</button>
           <button data-testid="prompt-dialog" onClick={() => setStatus(`prompt:${prompt("输入测试文本", "Lingee") ?? "dismissed"}`)}>打开输入框</button>
-          <a data-testid="download-link" download="lingee-test.txt" href="data:text/plain;charset=utf-8,Lingee%20Chrome%20Control">下载测试文件</a>
+          <a data-testid="download-link" download="lingee-test.txt" href="data:text/plain;charset=utf-8,Lingee%20Browser%20Control">下载测试文件</a>
           <button data-testid="console-log" onClick={() => { console.warn("Lingee structured warning"); setStatus("console:logged"); }}>写入控制台日志</button>
         </div>
         <output data-testid="file-dialog-result">{status}</output>

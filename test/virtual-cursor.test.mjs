@@ -30,13 +30,13 @@ test("virtual cursor starts centered, stays visible, recovers its host, and is r
     legacyHost.setAttribute("data-lingee-agent-cursor", "overlay-v9");
     root.appendChild(legacyHost);
     const legacyObserver = { disconnected: false, disconnect() { this.disconnected = true; } };
-    globalThis.__lingeeChromeVirtualCursorV9 = { host: legacyHost, observer: legacyObserver, onResize() {}, scrollTimer: null };
+    globalThis.__lingeeBrowserVirtualCursorV9 = { host: legacyHost, observer: legacyObserver, onResize() {}, scrollTimer: null };
     assert.deepEqual(renderVirtualCursor(VIRTUAL_CURSOR_KEY, null, null, "ensure", {}, "chrome-extension://test/icons/lingee-48.png"), {
       visible: true, x: 400, y: 300, phase: "ensure", topLayer: true
     });
     assert.equal(legacyObserver.disconnected, true, "a new cursor disconnects the previous version observer");
     assert.equal(legacyHost.isConnected, false, "a new cursor removes the previous version host");
-    assert.equal(globalThis.__lingeeChromeVirtualCursorV9, undefined);
+    assert.equal(globalThis.__lingeeBrowserVirtualCursorV9, undefined);
     const host = root.children[0];
     assert.equal(host.tagName, "LINGEE-AGENT-CURSOR");
     assert.equal(host.shadowMode, "closed");
@@ -144,7 +144,7 @@ test("virtual cursor starts centered, stays visible, recovers its host, and is r
     globalThis.addEventListener = saved.addEventListener;
     globalThis.removeEventListener = saved.removeEventListener;
     globalThis.requestAnimationFrame = saved.requestAnimationFrame;
-    delete globalThis.__lingeeChromeVirtualCursorV9;
+    delete globalThis.__lingeeBrowserVirtualCursorV9;
   }
 });
 
@@ -163,7 +163,7 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /async function moveVirtualCursor[\s\S]*requireVirtualCursor[\s\S]*CURSOR_SETTLE_MS[\s\S]*sendPointerCdp/);
   assert.match(background, /async function requireVirtualCursor[\s\S]*CURSOR_RENDER_FAILED[\s\S]*CURSOR_DOCUMENT_CHANGED[\s\S]*CURSOR_POSITION_MISMATCH/);
   assert.match(background, /async function showVirtualCursor[\s\S]*boundedBrowserCall[\s\S]*CURSOR_RENDER_TIMEOUT/, "virtual cursor injection is bounded so a tab queue cannot be held indefinitely");
-  assert.match(background, /const effectiveX = x == null && previous \? previous\.x : x/);
+  assert.match(background, /const centerAnchoredRecovery = x == null && y == null && previous\?\.anchoredToCenter === true[\s\S]*const effectiveX = x == null && previous && !centerAnchoredRecovery \? previous\.x : x/);
   assert.match(background, /async function ensureDebugger[\s\S]*null, null, "ensure"/);
   assert.match(background, /function refreshForeignFrameMonitor[\s\S]*null, null, "ensure"/);
   assert.match(background, /onDOMContentLoaded[\s\S]*frameId === 0[\s\S]*recoverVirtualCursor/);
@@ -179,7 +179,7 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /pointerInput: "bounded-pointer-v3"/);
   assert.match(background, /function createdTabsForClick[\s\S]*entry\.openerTabId === tabId[\s\S]*entry\.windowId === sourceTab\.windowId/, "new tabs without an opener are correlated only when the controlled source was active in the same window");
   assert.match(background, /createdTabIds\.length && error\?\.code === "CURSOR_RENDER_FAILED"[\s\S]*post-new-tab-click[\s\S]*finalFeedbackUnavailable: true/, "a confirmed child tab makes unavailable post-click feedback non-fatal after the pre-input visual contract passed");
-  assert.match(background, /locatorQueries: "codex-read-v1"/);
+  assert.match(background, /locatorQueries: "codex-read-v3"/);
   assert.match(background, /formControls: "verified-fill-v3"/);
   assert.match(background, /resolveFrameContext[\s\S]*this\.scrollIntoView\(\{block:'center',inline:'center',behavior:'instant'\}\)[\s\S]*getBoundingClientRect/, "frame elements are scrolled into the top-level viewport before pointer coordinates are composed");
   assert.match(background, /resolveFrameContext\(tabId, framePath, false\)[\s\S]*resolveLocator\.toString\(\)[\s\S]*false/, "frame offsets are measured again without scrolling after the target scroll changes ancestor geometry");
@@ -187,7 +187,7 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /LINGEE_ACTIONABILITY[\s\S]*INPUT_TARGET_OBSCURED/, "obstructed pointer targets fail with a stable actionability error");
   assert.match(background, /DOM\.describeNode[\s\S]*Page\.getFrameTree[\s\S]*flattenFrameTree\(latestFrameTree\)\.get\(childFrameId\)/, "each resolved frame element is checked against a fresh frame tree for cross-process navigation");
   assert.match(background, /Target\.attachedToTarget[\s\S]*registerOopifSession[\s\S]*Target\.setAutoAttach[\s\S]*flatten: true/, "out-of-process frames use Chrome debugger flat auto-attach sessions");
-  assert.doesNotMatch(background, /Target\.attachToTarget/, "Chrome extension frame control does not use unsupported direct child-target attachment");
+  assert.doesNotMatch(background, /Target\.attachToTarget/, "Browser extension frame control does not use unsupported direct child-target attachment");
   assert.match(background, /async function detachDebugger[\s\S]*boundedCleanup[\s\S]*Target\.setAutoAttach[\s\S]*autoAttach: false[\s\S]*debuggerController\.detach/, "detaching disables OOPIF auto-attach with a bounded wait before releasing the root debugger session");
   assert.match(background, /Page\.javascriptDialogOpening[\s\S]*jsDialogsByTab\.set[\s\S]*dialogOpenWaitersByTab/);
   assert.match(background, /Page\.javascriptDialogClosed[\s\S]*jsDialogsByTab\.delete[\s\S]*dialogCloseWaitersByTab/);
@@ -201,6 +201,7 @@ test("background integrates the cursor with all pointer actions and detach clean
   assert.match(background, /async function ensureDebugger[\s\S]*wasControlled[\s\S]*recoverCursor && !wasControlled[\s\S]*recoverVirtualCursor/, "cursor recovery runs when control starts, not before every debugger command");
   assert.match(background, /async function sendCdp[\s\S]*ensureDebugger\(tabId, \{ recoverCursor: false \}\)/, "generic debugger commands do not repeat cursor recovery");
   assert.match(background, /chrome\.tabs\.onActivated\.addListener[\s\S]*recoverVirtualCursor\(tabId, "tab-activated"\)/, "manually activated controlled tabs recover their cursor");
+  assert.match(background, /centerAnchoredRecovery[\s\S]*previous\?\.anchoredToCenter[\s\S]*anchoredToCenter: x == null && y == null/, "concurrent recovery keeps a newly initialized cursor anchored to the live viewport center");
   assert.match(background, /case "browser\.activateTab"[\s\S]*controlledTabs\.has\(tabId\)[\s\S]*await recoverVirtualCursor\(tabId, "tab-activated"\)/, "standard tab activation waits for cursor recovery");
   assert.match(background, /async function dispatchMouseReleaseOrDialog[\s\S]*boundedBrowserCall\(command, POINTER_ACK_TIMEOUT_MS, "POINTER_INPUT_TIMEOUT"[\s\S]*createdTabsForClick[\s\S]*releaseAcknowledgementTimedOut: true/, "new-tab clicks cannot hold the tab queue when Chrome omits the mouse-release acknowledgement");
   assert.match(background, /const release = await dispatchMouseReleaseOrDialog[\s\S]*if \(release\.dialogOpened\) return release/);

@@ -23,6 +23,7 @@ It does not claim to defend against a fully compromised OS account, a malicious 
 - Site access is denied by default except loopback hosts.
 - A hostname blocklist takes precedence over all other settings.
 - History, bookmarks, and downloads are disabled independently.
+- History and bookmark APIs are optional Chrome permissions granted only by a user gesture in the extension settings; the Host sensitive-metadata gate remains independently disabled by default.
 - Raw CDP is method-allowlisted.
 - Foreign-extension-frame mitigation is injected only into explicitly controlled tabs, immediately before debugger attachment; it is not a global content script.
 - Third-party IPC uses a random 256-bit token.

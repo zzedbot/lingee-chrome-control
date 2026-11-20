@@ -1,11 +1,11 @@
-export const VIRTUAL_CURSOR_KEY = "__lingeeChromeVirtualCursorV13";
+export const VIRTUAL_CURSOR_KEY = "__lingeeBrowserVirtualCursorV13";
 
 // This function is serialized by chrome.scripting.executeScript. Keep it self-contained.
 export function renderVirtualCursor(markerKey, rawX, rawY, phase = "move", details = {}, iconUrl = "") {
   if (!document.documentElement) return { visible: false };
 
   for (const key of Object.getOwnPropertyNames(globalThis)) {
-    if (key === markerKey || !/^__lingeeChromeVirtualCursorV\d+$/.test(key)) continue;
+    if (key === markerKey || !/^__lingeeBrowserVirtualCursorV\d+$/.test(key)) continue;
     const legacy = globalThis[key];
     legacy?.observer?.disconnect?.();
     globalThis.removeEventListener?.("resize", legacy?.onResize);

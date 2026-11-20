@@ -19,14 +19,14 @@ test("MCP server initializes and lists browser tools", async (t) => {
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
   await waitUntil(() => responses.length === 2);
 
-  assert.equal(responses[0].result.serverInfo.name, "lingee-chrome-agent-bridge");
+  assert.equal(responses[0].result.serverInfo.name, "lingee-browser-agent-bridge");
   assert.equal(responses[0].result.serverInfo.version, VERSION);
   assert.ok(responses[1].result.tools.some((tool) => tool.name === "browser_dom_snapshot"));
   assert.ok(responses[1].result.tools.some((tool) => tool.name === "policy_allow_host"));
 });
 
 test("MCP instance listing exposes only stable public descriptor fields", async (t) => {
-  const bridgeHome = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-mcp-"));
+  const bridgeHome = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-mcp-"));
   const runtimeDirectory = path.join(bridgeHome, "runtime");
   await fs.mkdir(runtimeDirectory);
   const endpoint = net.createServer((socket) => socket.end());
@@ -36,10 +36,13 @@ test("MCP instance listing exposes only stable public descriptor fields", async 
   });
   const address = endpoint.address();
   const descriptor = {
-    instanceId: "chrome-a",
+    instanceId: "browser-a",
+    product: "lingee-browser-agent-bridge",
+    browserFamily: "chromium",
+    browserTarget: "google",
     pid: 1234,
     transport: "local-pipe",
-    nativeHostName: "org.universal_browser.bridge",
+    nativeHostName: "com.lingee.app.browser_agent_bridge",
     startedAt: "2026-07-27T00:00:00.000Z",
     endpoint: { host: "127.0.0.1", port: address.port },
     token: "top-level-secret",
@@ -50,7 +53,7 @@ test("MCP instance listing exposes only stable public descriptor fields", async 
   await fs.writeFile(path.join(runtimeDirectory, "bridge-1234.json"), JSON.stringify(descriptor));
 
   const child = spawn(process.execPath, [path.resolve("src/mcp-server.mjs")], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: bridgeHome },
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: bridgeHome },
     stdio: ["pipe", "pipe", "pipe"]
   });
   t.after(async () => {
@@ -72,10 +75,13 @@ test("MCP instance listing exposes only stable public descriptor fields", async 
 
   const instances = JSON.parse(responses[0].result.content[0].text);
   assert.deepEqual(instances, [{
-    instanceId: "chrome-a",
+    instanceId: "browser-a",
+    product: "lingee-browser-agent-bridge",
+    browserFamily: "chromium",
+    browserTarget: "google",
     pid: 1234,
     transport: "local-pipe",
-    nativeHostName: "org.universal_browser.bridge",
+    nativeHostName: "com.lingee.app.browser_agent_bridge",
     startedAt: "2026-07-27T00:00:00.000Z"
   }]);
   assert.doesNotMatch(responses[0].result.content[0].text, /secret|token|endpoint|futureField|schemaVersion/);

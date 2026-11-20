@@ -1,4 +1,4 @@
-# Lingee Chrome Control Skill evaluation
+# Lingee Browser Control Skill evaluation
 
 Date: 2026-11-15
 Evaluated version: `0.1.31`
@@ -6,7 +6,7 @@ Verdict: **Pass — suitable for controlled use through the standard MCP or bund
 
 ## Scope
 
-This evaluation covers the repository Skill at `skills/lingee-chrome-control`, the installed Skill at `C:\Users\fcliq\.codex\skills\lingee-chrome-control`, the bundled Chrome extension and Native Host, the generic control documentation, the KDesign/KDesign Pro reference, and the validated workflow runner and examples.
+This evaluation covers the repository Skill at `skills/lingee-browser-control`, the installed Skill at `C:\Users\fcliq\.codex\skills\lingee-browser-control`, the bundled Chrome extension and Native Host, the generic control documentation, the KDesign/KDesign Pro reference, and the validated workflow runner and examples.
 
 ## Results
 

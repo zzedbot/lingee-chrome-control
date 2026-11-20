@@ -38,8 +38,8 @@
 
 - 新实例 `49da5f6a-eea8-4538-89e7-8cc28a92b6c1`；Host 与扩展均为 0.1.4。
 - 兼容性标记：about-blank-v4、generation-v2、counts-v1。
-- `npm run test:chrome`：通过，foreignFrameChecked=false。
-- 使用 Surfingkeys 1.19.1 的 `pages/frontend.html` 执行 `npm run test:chrome:foreign-frame`：通过，foreignFrameChecked=true。
+- `npm run test:browser`：通过，foreignFrameChecked=false。
+- 使用 Surfingkeys 1.19.1 的 `pages/frontend.html` 执行 `npm run test:browser:foreign-frame`：通过，foreignFrameChecked=true。
 - 两项真实测试均完成标签页创建、claim、DOM 读取、点击、结果复核、detach 和关闭清理。
 - 0.1.4 构建后 `npm run check` 与 `npm test` 通过，68/68；`git diff --check` 无空白错误。
 
@@ -59,8 +59,8 @@
 
 - 新实例 `9bd9780a-59e2-4a69-a577-5095b7d271a6`；Host 与扩展均为 0.1.6。
 - 兼容性标记：about-blank-v5、generation-v3、counts-v1。
-- `npm run test:chrome`：通过，含 claim 后导航与成功清理断言。
-- Surfingkeys `pages/frontend.html` 的 `npm run test:chrome:foreign-frame`：通过，foreignFrameChecked=true。
+- `npm run test:browser`：通过，含 claim 后导航与成功清理断言。
+- Surfingkeys `pages/frontend.html` 的 `npm run test:browser:foreign-frame`：通过，foreignFrameChecked=true。
 - 当前必做真实浏览器验证闭环完成。
 
 ### 0.1.7 最终复核修复候选
@@ -103,7 +103,7 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 
 - 新实例 `a05c1253-11a5-40c6-ab45-c994b90ea556`；Host 与扩展均为 0.1.12。
 - 兼容性标记：remove-after-blank-v11、generation-v4、counts-v2。
-- `npm run test:chrome`：通过，含 claim 后导航、DOM、点击、结果读取、detach、关闭和标签页不存在断言。
+- `npm run test:browser`：通过，含 claim 后导航、DOM、点击、结果读取、detach、关闭和标签页不存在断言。
 - Surfingkeys 1.19.1 `pages/frontend.html` 的增强回归连续 10/10 轮通过；fixture 每轮尝试在安全 about:blank 文档内创建嵌套外部扩展 iframe，并确认原 frame 及其子树被移除。
 - 此前 0.1.8 至 0.1.11 在第 3–5 轮可复现的短暂销毁文档覆盖误判，在本轮压力回归中未再出现。
 - 0.1.12 的源码、已构建 Host、已安装哈希命名 Host 与部署扩展目录一致；工作区保留未提交状态。
@@ -112,15 +112,15 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 
 - 下载用户指定的 Lingee favicon，验证为 PNG，实际尺寸 48×48，SHA-256 为 `AFE1A3480F3AE50ECD6578DCFFC53C00BED3D3920BC4BC0F7B90EEC3873A5534`。
 - 原图保存为 `extension/icons/lingee-48.png`，manifest 的扩展图标和 action 工具栏图标均按真实 48px 尺寸引用该文件。
-- 用户可见产品名统一为 `Lingee Chrome Agent Bridge`；npm/MCP 标识改为 `lingee-chrome-agent-bridge`。Native Messaging 主机名、运行目录和既有技能目录等内部兼容标识保持不变。
+- 用户可见产品名统一为 `Lingee Browser Agent Bridge`；npm/MCP 标识改为 `lingee-browser-agent-bridge`。Native Messaging 主机名、运行目录和既有技能目录等内部兼容标识保持不变。
 - 0.1.13 Host 已构建安装，manifest 与图标已同步至部署目录；源文件与部署文件哈希一致。
 - `npm run check` 与 `npm test`（76/76）通过；待用户重新加载确认运行版本和图标显示。
 
-### Lingee Chrome Control Skill 更名
+### Lingee Browser Control Skill 更名
 
-- 仓库目录从 `skills/control-universal-chrome` 迁移到 `skills/lingee-chrome-control`，frontmatter 名称改为 `lingee-chrome-control`。
-- `agents/openai.yaml` 的显示名为 `Lingee Chrome Control`，默认提示显式引用 `$lingee-chrome-control`。
-- 测试、设计文档、交接路径及调用示例已同步；本机安装目录也迁移到 `C:\Users\fcliq\.codex\skills\lingee-chrome-control`，旧目录不再保留。
+- 仓库目录从 `skills/control-universal-chrome` 迁移到 `skills/lingee-browser-control`，frontmatter 名称改为 `lingee-browser-control`。
+- `agents/openai.yaml` 的显示名为 `Lingee Browser Control`，默认提示显式引用 `$lingee-browser-control`。
+- 测试、设计文档、交接路径及调用示例已同步；本机安装目录也迁移到 `C:\Users\fcliq\.codex\skills\lingee-browser-control`，旧目录不再保留。
 - 官方 `quick_validate.py` 对仓库副本和安装副本均验证通过。
 
 ### 0.1.14 可见虚拟鼠标
@@ -130,7 +130,7 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - `browser.getInfo` 新增 `virtualCursor: "overlay-v1"` 与 `virtualCursor` capability；真实 E2E 前置检查会拒绝旧扩展，E2E 会验证覆盖层宿主、状态和坐标。
 - 0.1.14 Host 已构建并安装；`npm run check` 与 `npm test`（78/78）通过。部署目录已同步。
 - 用户重新加载后，实例 `d1c22976-5b08-4799-b86f-a015162f20aa` 的 Host/扩展均报告 0.1.14，Chrome 为 152.0.0.0，兼容标记包含 `virtualCursor: "overlay-v1"`。
-- `npm run test:chrome` 真实 E2E 通过并报告 `virtualCursorChecked: true`；另用独立回环页面完成语义点击截图，目视确认箭头尖端位于按钮点击坐标，延迟 100ms 截图确认紫色点击脉冲处于动画中间帧。测试标签均已 detach 并关闭。
+- `npm run test:browser` 真实 E2E 通过并报告 `virtualCursorChecked: true`；另用独立回环页面完成语义点击截图，目视确认箭头尖端位于按钮点击坐标，延迟 100ms 截图确认紫色点击脉冲处于动画中间帧。测试标签均已 detach 并关闭。
 
 ### 0.1.15 常驻虚拟鼠标候选
 
@@ -144,15 +144,15 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - 0.1.15 重新加载后的增强 E2E 通过，但等待 2.5 秒的常驻验收发现：Chrome 显示调试提示条后页面视口高度缩小，未移动的箭头停留在旧中心。
 - 新增 resize 跟随：箭头尚未被动作移动时随当前视口保持居中；执行指针动作后解除中心锚定，窗口变化不会覆盖动作坐标。detach 同时移除 resize 监听。
 - 版本升级为 0.1.16，兼容标记升级为 `virtualCursor: "overlay-v3"`，避免已加载的 0.1.15/overlay-v2 被误判为修正版。Host 已构建安装，扩展部署目录逐文件哈希一致，`npm run check` 与 `npm test`（78/78）通过；待重新加载后重跑 2.5 秒常驻验收。
-- 用户重新加载后，实例 `f22dde34-ba39-4226-9760-9c6461ce30a1` 的 Host/扩展均报告 0.1.16，Chrome 152 报告 `virtualCursor: "overlay-v3"`。增强 `npm run test:chrome` 通过 claim 居中、导航后居中和坐标移动断言。
+- 用户重新加载后，实例 `f22dde34-ba39-4226-9760-9c6461ce30a1` 的 Host/扩展均报告 0.1.16，Chrome 152 报告 `virtualCursor: "overlay-v3"`。增强 `npm run test:browser` 通过 claim 居中、导航后居中和坐标移动断言。
 
 ### 0.1.17 Precision Glass 受控反馈
 
 - 按用户确认的 `precision-glass.html` 设计实现顶部玻璃状态条、Lingee 图标、接管边缘扫光、30×38 白色双描边鼠标、双层点击波纹与中心闪点、滚动方向胶囊和拖拽起点连线，并加入 `prefers-reduced-motion` 降级。
 - `browser.wheel` 与 `browser.scroll` 会向覆盖层传递滚动方向和强度；`browser.drag` 会传递起点和当前位置。覆盖层保持封闭 Shadow DOM、`pointer-events:none` 和最大层级，不改变 CDP 输入结果。
 - 版本升级为 0.1.17。首次真实 E2E 发现全屏拖拽 SVG 恢复了默认命中测试并挡住页面按钮；Shadow 宿主和全部子元素现均强制 `pointer-events:none`，并新增源码级断言。兼容标记随修复升级为 `virtualCursor: "overlay-v5"`，以拒绝仍加载缺陷版 `overlay-v4` 的实例。
-- Host 已构建并安装到 `universal-browser-host-8c14a274dc9b7761.exe`，六个运行脚本、manifest 和图标已同步到 Chrome 解包扩展目录并通过 SHA-256 一致性检查。重新加载 `overlay-v5`、`overlay-v6` 和 `overlay-v7` 后真实 E2E 均通过；截图确认点击与滚动已对齐，但 class 切换未取消浏览器中已经运行的拖拽 transition。拖拽阶段现直接设置内联 `transition-duration:0ms`，在释放前等待最终坐标稳定，再恢复 70ms 动画，标记升级为 `overlay-v8`。
-- 最终重新加载后，运行实例 `cce72e91-202e-46c3-82cc-0b421c2fa46e` 报告 Host/扩展 0.1.17 和 `virtualCursor: "overlay-v8"`。`npm run test:chrome` 通过；实机关键帧确认状态条与图标常驻，点击箭头尖端和波纹中心一致，滚动胶囊贴近箭头，拖拽箭头、连线终点与释放波纹对齐，detach 后测试标签已清理。`npm run check` 通过，`npm test` 为 78/78 通过。
+- Host 已构建并安装到 `lingee-browser-host-8c14a274dc9b7761.exe`，六个运行脚本、manifest 和图标已同步到 Chrome 解包扩展目录并通过 SHA-256 一致性检查。重新加载 `overlay-v5`、`overlay-v6` 和 `overlay-v7` 后真实 E2E 均通过；截图确认点击与滚动已对齐，但 class 切换未取消浏览器中已经运行的拖拽 transition。拖拽阶段现直接设置内联 `transition-duration:0ms`，在释放前等待最终坐标稳定，再恢复 70ms 动画，标记升级为 `overlay-v8`。
+- 最终重新加载后，运行实例 `cce72e91-202e-46c3-82cc-0b421c2fa46e` 报告 Host/扩展 0.1.17 和 `virtualCursor: "overlay-v8"`。`npm run test:browser` 通过；实机关键帧确认状态条与图标常驻，点击箭头尖端和波纹中心一致，滚动胶囊贴近箭头，拖拽箭头、连线终点与释放波纹对齐，detach 后测试标签已清理。`npm run check` 通过，`npm test` 为 78/78 通过。
 
 ### 0.1.18 可见快速移动
 
@@ -173,13 +173,13 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - 在 `chrome://extensions` 重新加载后，运行实例 `403fc06f-a8de-46b7-886f-1f70245320bb` 报告 Host/扩展均为 0.1.20，兼容标记为 `overlay-v11`。增强真实 E2E 校验宿主计算样式为 `position: fixed`、`z-index: 2147483647` 且 `:popover-open` 为真，并在页面打开覆盖全视口、最大 z-index 的模态框后再次确认覆盖层仍在 top layer。
 - 同一实例连续运行 10 轮增强真实 E2E，10/10 全部通过；每轮覆盖首次接管显示、两次导航恢复、可见移动、点击、模态框顶层竞争、detach 和标签清理，未复现偶发不显示。
 
-### Lingee Chrome Control Skill 自包含审计
+### Lingee Browser Control Skill 自包含审计
 
 - 复现并确认灵基报错根因：旧 ZIP 仅含 `invoke.mjs`/`doctor.mjs` 包装脚本，运行时强制从完整源码仓库加载 `src/bridge-client.mjs`；单独安装 Skill 必然可能返回 `BRIDGE_ROOT_NOT_FOUND`。
 - 将公共 `bridge-client.mjs` 与 `runtime-paths.mjs` 放入 `scripts/runtime/`，默认从 Skill 内加载；`UNIVERSAL_CHROME_BRIDGE_ROOT` 仅保留为显式仓库开发覆盖。新增同步测试，要求内置运行时与仓库公共客户端逐字节一致。
-- 修复多实例约束：CLI 调用和只读 doctor 在多个实例且没有 `UNIVERSAL_BROWSER_INSTANCE_ID` 时返回 `BRIDGE_INSTANCE_SELECTION_REQUIRED`，不会默认选择最新 Chrome 会话。
+- 修复多实例约束：CLI 调用和只读 doctor 在多个实例且没有 `LINGEE_BROWSER_INSTANCE_ID` 时返回 `BRIDGE_INSTANCE_SELECTION_REQUIRED`，不会默认选择最新 Chrome 会话。
 - 独立复制测试确认 Skill 离开源码仓库、清除根目录变量后可运行；本机安装副本真实 `instances` 与 `doctor.mjs` 均成功，doctor 报告 `bridgeClient.source: "bundled"` 且扩展已连接。
-- `quick_validate.py` 对仓库副本和安装副本均通过；Skill 定向测试为 36/36。重新生成的 ZIP 包含 9 个文件、CRC 完整、包含两个运行时文件且不递归包含旧 ZIP，路径为 `dist/lingee-chrome-control-skill-0.1.20.zip`。
+- `quick_validate.py` 对仓库副本和安装副本均通过；Skill 定向测试为 36/36。重新生成的 ZIP 包含 9 个文件、CRC 完整、包含两个运行时文件且不递归包含旧 ZIP，路径为 `dist/lingee-browser-control-skill-0.1.20.zip`。
 
 ### 0.1.21 初始化首帧与慢速可视验收
 
@@ -187,7 +187,7 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - 单元测试新增初始化位置、临时禁用过渡及恢复普通过渡的断言；`npm run check` 和 `npm test` 均通过，测试结果为 82/82。
 - 重建并注册 0.1.21 Native Host 后，仓库与 Chrome 解包部署目录的 7 个运行文件 SHA-256 一致。重新加载扩展后的实例 `e4a46bbb-aab2-4fe5-9a06-634893cf7bad` 报告 Host/扩展均为 0.1.21，兼容标记为 `overlay-v12`，真实 Chrome E2E 通过。
 - 慢速可视验收依次停留展示居中初始化、三段移动、语义点击、三次向下滚动和一次向上滚动。四阶段截图保存为 `dist/cursor-slow-{1-initialized,2-moved,3-clicked,4-scrolled}.png`；初始化截图确认箭头直接位于视口中心，移动和点击截图确认箭头到达目标且按钮状态改变，滚动截图确认页面进入下一内容区，结束后正常 detach 并保留演示页。
-- 已生成 `dist/lingee-chrome-control-skill-0.1.21.zip`（9 个文件）和 `dist/lingee-chrome-agent-bridge-extension-0.1.21.zip`（12 个文件）。两包均从 ZIP 解压后逐文件核对 SHA-256；解压 Skill 通过 `quick_validate.py`，扩展脚本通过 `node --check`，扩展 manifest 的名称和版本核验为 Lingee Chrome Agent Bridge 0.1.21。
+- 已生成 `dist/lingee-browser-control-skill-0.1.21.zip`（9 个文件）和 `dist/lingee-browser-agent-bridge-extension-0.1.21.zip`（12 个文件）。两包均从 ZIP 解压后逐文件核对 SHA-256；解压 Skill 通过 `quick_validate.py`，扩展脚本通过 `node --check`，扩展 manifest 的名称和版本核验为 Lingee Browser Agent Bridge 0.1.21。
 
 ### 0.1.22 动画与真实输入强绑定
 
@@ -196,14 +196,14 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 - 鼠标移动在视觉移动完成后才派发目标位置的 `mouseMoved`；单击在按下态绘制后派发 `mousePressed`，保持 80ms，再派发 `mouseReleased` 并展示 560ms 点击反馈；滚轮、页面滚动和拖拽采用相同的绘制前置门禁。
 - 覆盖层无法绘制、导航替换文档或坐标不一致时分别返回 `CURSOR_RENDER_FAILED`、`CURSOR_DOCUMENT_CHANGED`、`CURSOR_POSITION_MISMATCH`，不会继续派发对应输入。
 - 静态检查与单元测试已通过。重新加载后的实例 `8c41416b-bef1-4ccf-8fe4-2da4182263eb` 报告 Host/扩展均为 0.1.22、虚拟鼠标标记为 `overlay-v13`，标准真实 Chrome E2E 通过。
-- 针对第三方智能体可能用 raw CDP 或页面脚本绕过指针接口的问题，Skill 新增可见交互路由约束和回归测试。Skill 随后增加 `assets/chrome-extension/`，内含与仓库逐文件一致、可直接加载的完整 0.1.22 解包扩展；回归测试会核对全部 13 个扩展文件。仓库 Skill 与本机安装副本均通过 `quick_validate.py`，新包 `dist/lingee-chrome-control-skill-0.1.22.zip` 包含 22 个预期文件。
+- 针对第三方智能体可能用 raw CDP 或页面脚本绕过指针接口的问题，Skill 新增可见交互路由约束和回归测试。Skill 随后增加 `assets/chrome-extension/`，内含与仓库逐文件一致、可直接加载的完整 0.1.22 解包扩展；回归测试会核对全部 13 个扩展文件。仓库 Skill 与本机安装副本均通过 `quick_validate.py`，新包 `dist/lingee-browser-control-skill-0.1.22.zip` 包含 22 个预期文件。
 - 标准控制契约进一步改为可执行门禁：MCP 工具列表不再暴露 raw CDP 和 CDP allowlist mutation；bundled CLI 对 `browser.cdp`、`policy.allowCdpMethod`、直接 CDP 名称和未知 Bridge 方法在实例发现与连接前失败关闭。新增测试验证 MCP/CLI 两条标准路径均不存在 raw 逃逸口，并要求长任务、上下文压缩、重试和恢复后继续遵守同一控制面。
 
 ### 0.1.23 标准控制面发布
 
 - package、Native Host/MCP、Chrome 扩展 manifest 和 Skill 内置扩展版本统一升级为 0.1.23。
 - 0.1.23 将标准控制面门禁作为发布内容：高层 MCP/CLI 均可使用，raw CDP、页面脚本和未知方法不属于 Skill 控制契约。
-- Skill 包更新为 `dist/lingee-chrome-control-skill-0.1.23.zip`，继续包含完整解包扩展。
+- Skill 包更新为 `dist/lingee-browser-control-skill-0.1.23.zip`，继续包含完整解包扩展。
 
 本轮公开桥接口读取结果：
 
@@ -221,11 +221,11 @@ E2E fixture 新增空白文档复用尝试：页面先注册 load 处理器并�
 
 用户已确认重启。重新发现的新实例为 `0ea6ab31-823d-47c4-8bbb-c6196d936444`，Host 和扩展均报告 0.1.2，但 `browser.getInfo` 仍没有 compatibility 字段。源码与部署目录的 background.js 均明确包含 v2 标记，因此运行代码与磁盘不一致，具体缓存/加载原因尚未确认。
 
-已执行基础 E2E 命令，前置检查以 `Reload Chrome: foreign-frame monitor code is stale` 拒绝，未打开测试标签页，未执行 claim/DOM/点击。这不是基础 E2E 通过。已请求用户在 `chrome://extensions` 手动点击 Lingee Chrome Agent Bridge 的“重新加载”，待确认后再次检查。无需再次盲目重启整个浏览器。
+已执行基础 E2E 命令，前置检查以 `Reload Chrome: foreign-frame monitor code is stale` 拒绝，未打开测试标签页，未执行 claim/DOM/点击。这不是基础 E2E 通过。已请求用户在 `chrome://extensions` 手动点击 Lingee Browser Agent Bridge 的“重新加载”，待确认后再次检查。无需再次盲目重启整个浏览器。
 
 1. 用户重启 Chrome 后，重新发现实例并明确设置实例 ID。
 2. 检查 Host 和扩展均为 0.1.2，且扩展返回 v2 标记。
-3. 执行基础 `npm run test:chrome`。
-4. 设置 `UNIVERSAL_BROWSER_E2E_FOREIGN_FRAME_URL` 为 `chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/pages/frontend.html`，执行 `npm run test:chrome:foreign-frame`。
+3. 执行基础 `npm run test:browser`。
+4. 设置 `LINGEE_BROWSER_E2E_FOREIGN_EXTENSION_URL` 为 `chrome-extension://gfbliohnnapiefjpjlpjnehglfpaknnc/pages/frontend.html`，执行 `npm run test:browser:foreign-frame`。
 5. 外部回归除中和后 DOM/点击验证外，还应补原始资源确实加载的证据，防止不可访问资源导致误判覆盖。
 6. 根据分阶段错误修复、复测，再更新本记录。当前没有自动提交或发布。

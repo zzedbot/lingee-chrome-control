@@ -9,10 +9,10 @@ test("standalone Skill installer dry-run requires system Node and plans the ligh
   if (process.platform !== "win32") return t.skip("Windows installer test");
   const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-skill-installer-test-"));
   t.after(() => fs.rm(taskDir, { recursive: true, force: true }));
-  const script = path.resolve("skills", "lingee-chrome-control", "scripts", "install-host.mjs");
+  const script = path.resolve("skills", "lingee-browser-control", "scripts", "install-host.mjs");
   const report = await runJson(process.execPath, [script, "--extension-id", "haibmamedieblhbonifchcedcbbfgini", "--dry-run"], {
     ...process.env,
-    UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir
+    LINGEE_BROWSER_BRIDGE_HOME: taskDir
   });
 
   assert.equal(report.ok, true);

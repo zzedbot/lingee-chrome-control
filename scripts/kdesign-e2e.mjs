@@ -10,19 +10,33 @@ import { COMPONENT_TEST_MATRIX, PRO_TEST_MATRIX } from "../test/web-fixture/offi
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const distRoot = path.join(repoRoot, "test", "web-fixture", "dist");
+const cliArgs = process.argv.slice(2);
+if (cliArgs.includes("--help")) {
+  process.stdout.write([
+    "Usage: node scripts/kdesign-e2e.mjs",
+    "",
+    "Environment:",
+    "  LINGEE_BROWSER_INSTANCE_ID  Required when more than one Bridge instance is running.",
+    "  KDESIGN_E2E_BATCH           all|structure|general|data-entry|display-feedback|pro",
+    "  KDESIGN_E2E_COMPONENT       Restrict component coverage to one catalog id.",
+    "  KDESIGN_E2E_PRO_PAGE        Restrict KDesign Pro coverage to one route id."
+  ].join("\n") + "\n");
+  process.exit(0);
+}
+if (cliArgs.length) throw new Error(`Unknown argument: ${cliArgs[0]}. Run with --help for supported configuration.`);
 const requestedBatch = process.env.KDESIGN_E2E_BATCH || "all";
 const requestedComponent = process.env.KDESIGN_E2E_COMPONENT || "";
 const requestedProPage = process.env.KDESIGN_E2E_PRO_PAGE || "";
 await access(path.join(distRoot, "index.html"));
 
 const instances = await listBridgeInstances();
-const requestedInstanceId = process.env.UNIVERSAL_BROWSER_INSTANCE_ID;
+const requestedInstanceId = process.env.LINGEE_BROWSER_INSTANCE_ID;
 const selected = requestedInstanceId
   ? instances.find(({ instanceId }) => instanceId === requestedInstanceId)
   : instances.length === 1 ? instances[0] : undefined;
 if (!selected) throw new Error(requestedInstanceId
   ? `Bridge instance ${requestedInstanceId} is not running`
-  : `Expected exactly one Bridge instance; found ${instances.length}. Set UNIVERSAL_BROWSER_INSTANCE_ID.`);
+  : `Expected exactly one Bridge instance; found ${instances.length}. Set LINGEE_BROWSER_INSTANCE_ID.`);
 
 const bridge = await connectBridge({ instanceId: selected.instanceId });
 const server = http.createServer(serveFixture);
@@ -134,13 +148,14 @@ try {
     await expectLocatorText({ testId: "component-state-base-data" }, /search:北京/);
   });
   await componentInteraction("cascader", async () => {
-    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='cascader-control'] input" } });
+    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='cascader-control'] .kd-cascader-single-wrapper" } });
     await bridge.call("browser.click", { tabId, locator: { text: "浙江", exact: true } });
     await bridge.call("browser.click", { tabId, locator: { text: "杭州", exact: true } });
     await expectLocatorText({ testId: "component-state-cascader" }, /hangzhou/);
   });
   await componentInteraction("city-picker", async () => {
-    await bridge.call("browser.fill", { tabId, locator: { css: "[data-testid='city-picker-control'] .kd-city-picker-content-search-input" }, value: "北京" });
+    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='city-picker-control'] .kd-city-picker-selector" } });
+    await bridge.call("browser.type", { tabId, text: "北京" });
     await expectLocatorText({ testId: "component-state-city-picker" }, /search:北京/);
   });
   await componentInteraction("color-picker", async () => {
@@ -224,7 +239,7 @@ try {
     await expectLocatorText({ testId: "component-state-transfer" }, /target:.*1/);
   });
   await componentInteraction("tree-select", async () => {
-    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='tree-select-control'] input" } });
+    await bridge.call("browser.click", { tabId, locator: { css: "[data-testid='tree-select-control'] .kd-tree-select-icon-arrow" } });
     const className = await bridge.call("browser.locatorGetAttribute", { tabId, locator: { css: "[data-testid='tree-select-control'] .kd-tree-select" }, name: "class" });
     assert.match(String(className), /kd-tree-select-visible/);
   });
@@ -270,14 +285,26 @@ try {
   });
   if (!requestedComponent) await recycleControlledTab("#/kdesign/message", "feedback-overlays");
   await componentInteraction("message", async () => {
-    await bridge.call("browser.click", { tabId, locator: { role: "button", name: "Success", exact: true } });
+    const result = await bridge.call("browser.performAndWaitForFeedback", {
+      tabId,
+      action: { method: "browser.click", params: { locator: { role: "button", name: "Success", exact: true } } },
+      text: "测试成功",
+      exact: true,
+      timeoutMs: 5000
+    });
+    assert.equal(result.feedback.text, "测试成功");
     await expectLocatorText({ testId: "component-state-message" }, /message:success/);
-    await expectPageText(/测试成功/);
   });
   await componentInteraction("notification", async () => {
-    await bridge.call("browser.click", { tabId, locator: { role: "button", name: "打开通知", exact: true } });
+    const result = await bridge.call("browser.performAndWaitForFeedback", {
+      tabId,
+      action: { method: "browser.click", params: { locator: { role: "button", name: "打开通知", exact: true } } },
+      text: "Lingee 确定性通知",
+      exact: false,
+      timeoutMs: 5000
+    });
+    assert.match(result.feedback.text, /Lingee 确定性通知/);
     await expectLocatorText({ testId: "component-state-notification" }, /notification:opened/);
-    await expectPageText(/Lingee 确定性通知/);
   });
   await componentInteraction("popconfirm", async () => {
     await bridge.call("browser.click", { tabId, locator: { role: "button", name: "删除记录", exact: true } });
@@ -343,7 +370,14 @@ try {
     await proInteraction(route, async () => {
       await bridge.call("browser.fill", { tabId, locator: { testId: "pro-form-subject" }, value: `Lingee ${route} 回归` });
       await bridge.call("browser.press", { tabId, key: "Tab" });
-      await bridge.call("browser.click", { tabId, locator: { testId: "pro-form-submit" } });
+      const feedback = await bridge.call("browser.performAndWaitForFeedback", {
+        tabId,
+        action: { method: "browser.click", params: { locator: { testId: "pro-form-submit" } } },
+        text: "申请提交成功",
+        exact: true,
+        timeoutMs: 5000
+      });
+      assert.equal(feedback.feedback.text, "申请提交成功");
       await expectLocatorText({ testId: "pro-form-result" }, /申请已提交/);
     });
   }
@@ -399,8 +433,10 @@ async function interactionWithFreshTabRecovery(name, hash, readyLocator, action)
   try {
     await checked(name, action);
   } catch (error) {
-    if (error?.code !== "POINTER_INPUT_TIMEOUT") throw error;
-    await recycleControlledTab(hash, `${name.replace(/[^a-z0-9]+/gi, "-")}-pointer-recovery`);
+    const recoverable = error?.code === "POINTER_INPUT_TIMEOUT"
+      || /^Locator text .* did not match /.test(String(error?.message || ""));
+    if (!recoverable) throw error;
+    await recycleControlledTab(hash, `${name.replace(/[^a-z0-9]+/gi, "-")}-interaction-recovery`);
     await waitForVisible(readyLocator, 7000);
     await delay(250);
     await checked(`${name}:recovered`, action);

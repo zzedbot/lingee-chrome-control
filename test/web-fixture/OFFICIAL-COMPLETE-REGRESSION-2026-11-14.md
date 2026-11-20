@@ -11,7 +11,7 @@ Bridge / 扩展版本：`0.1.27`
 - 深度交互：41 个 KDesign 组件、15 个 KDesign Pro 页面全部通过。
 - 自动化单元/契约测试：118 / 118 通过。
 - 真实 Chrome 连续回归：158 个检查通过。
-- 控制方式：仅使用 Lingee Chrome Control 标准高层 Bridge 方法；未使用 raw CDP、页面脚本或 DOM 注入。
+- 控制方式：仅使用 Lingee Browser Control 标准高层 Bridge 方法；未使用 raw CDP、页面脚本或 DOM 注入。
 - 临时页签：由 `endSession` 统一清理。
 
 ## KDesign 组件逐项结果

@@ -15,9 +15,9 @@ test("built Node-dependent Native Messaging launcher starts and exposes bridge s
   const nodePathFile = path.resolve("dist", "node-path.txt");
   try { await Promise.all([fs.access(executable), fs.access(hostScript), fs.access(nodePathFile)]); } catch { return t.skip("native host launcher has not been built"); }
 
-  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "universal-browser-node-launcher-test-"));
+  const taskDir = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-browser-node-launcher-test-"));
   const child = spawn(executable, [], {
-    env: { ...process.env, UNIVERSAL_BROWSER_BRIDGE_HOME: taskDir },
+    env: { ...process.env, LINGEE_BROWSER_BRIDGE_HOME: taskDir },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });

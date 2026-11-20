@@ -7,13 +7,17 @@ export const ACTION_INTENT_TYPES = Object.freeze({
   payment: "irreversible-write",
   "permission-change": "irreversible-write",
   login: "sensitive-data-transfer",
-  "browser-permission": "reversible-write"
+  "browser-permission": "reversible-write",
+  "record-create": "reversible-write",
+  "record-update": "reversible-write",
+  "record-submit": "irreversible-write"
 });
 
 export const ACTION_INTENT_METHODS = Object.freeze([
   "browser.click", "browser.coordinateClick", "browser.press", "browser.fill", "browser.type",
   "browser.check", "browser.uncheck", "browser.setChecked", "browser.selectOption",
-  "browser.setFileInput", "browser.setFileChooserFiles", "browser.handleDialog"
+  "browser.setFileInput", "browser.setFileChooserFiles", "browser.handleDialog",
+  "browser.performAndWaitForFeedback"
 ]);
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -60,16 +64,45 @@ export function createActionIntentManager({ now = () => Date.now(), randomUUID =
     return publicIntent(intent);
   }
 
-  function consume(sessionId, intentId, tabId) {
+  function consume(sessionId, intentId, tabId, documentId, stateDigest) {
     const session = requireSessionId(sessionId);
     const intent = currentIntent(session, intentId);
     if (tabId != null && intent.tabId !== tabId) throw coded("ACTION_INTENT_TAB_MISMATCH", "The action intent is bound to another tab", { intentId: intent.intentId, tabId });
+    if (intent.documentId && documentId && intent.documentId !== documentId) {
+      intent.status = "stale";
+      intent.confirmationRequired = false;
+      intent.staleReason = "document-changed";
+      throw staleIntent(intent);
+    }
+    if (intent.stateDigest && stateDigest && intent.stateDigest !== stateDigest) {
+      intent.status = "stale";
+      intent.confirmationRequired = false;
+      intent.staleReason = "form-state-changed";
+      throw staleIntent(intent);
+    }
     if (intent.status === "pending-confirmation") throw confirmationRequired(intent);
     if (intent.status === "rejected") throw coded("ACTION_CONFIRMATION_REJECTED", "The action intent was rejected", publicIntent(intent));
     if (intent.status !== "confirmed") throw coded("ACTION_INTENT_STATE_INVALID", "The action intent cannot be executed", { intentId: intent.intentId, status: intent.status });
     intent.status = "consumed";
     intent.executedAt = new Date(now()).toISOString();
     return { action: structuredClone(intent.action), intent: publicIntent(intent) };
+  }
+
+  function inspect(sessionId, intentId) {
+    return publicIntent(currentIntent(requireSessionId(sessionId), intentId));
+  }
+
+  function invalidateTab(sessionId, tabId, reason = "tab-state-changed") {
+    const session = requireSessionId(sessionId);
+    let invalidated = 0;
+    for (const intent of intentsBySession.get(session)?.values() || []) {
+      if (intent.tabId !== tabId || !["pending-confirmation", "confirmed"].includes(intent.status)) continue;
+      intent.status = "stale";
+      intent.confirmationRequired = false;
+      intent.staleReason = boundedString(String(reason), "reason", 1, 200);
+      invalidated += 1;
+    }
+    return { tabId, invalidated };
   }
 
   function releaseSession(sessionId) {
@@ -90,10 +123,11 @@ export function createActionIntentManager({ now = () => Date.now(), randomUUID =
       intent.confirmationRequired = false;
     }
     if (intent.status === "expired") throw coded("ACTION_INTENT_EXPIRED", "The action intent expired before execution", { intentId });
+    if (intent.status === "stale") throw staleIntent(intent);
     return intent;
   }
 
-  return { prepare, confirm, consume, releaseSession };
+  return { prepare, confirm, consume, inspect, invalidateTab, releaseSession };
 }
 
 function normalizeIntentInput(input) {
@@ -104,7 +138,9 @@ function normalizeIntentInput(input) {
   const targetOrigin = normalizeOrigin(input.targetOrigin);
   const action = normalizeAction(input.action);
   const dataTypes = input.dataTypes == null ? [] : normalizeDataTypes(input.dataTypes);
-  return { tabId: input.tabId, actionType: input.actionType, riskClass: ACTION_INTENT_TYPES[input.actionType], summary, targetOrigin, dataTypes, action };
+  const documentId = input.documentId == null ? null : boundedString(input.documentId, "documentId", 1, 200);
+  const stateDigest = input.stateDigest == null ? null : normalizedDigest(input.stateDigest);
+  return { tabId: input.tabId, documentId, stateDigest, actionType: input.actionType, riskClass: ACTION_INTENT_TYPES[input.actionType], summary, targetOrigin, dataTypes, action };
 }
 
 function normalizeAction(action) {
@@ -129,13 +165,15 @@ function normalizeOrigin(value) {
 }
 
 function scopeFor(intent) {
-  return crypto.createHash("sha256").update(JSON.stringify({ actionType: intent.actionType, targetOrigin: intent.targetOrigin, summary: intent.summary, dataTypes: intent.dataTypes, action: intent.action })).digest("hex");
+  return crypto.createHash("sha256").update(JSON.stringify({ documentId: intent.documentId, stateDigest: intent.stateDigest, actionType: intent.actionType, targetOrigin: intent.targetOrigin, summary: intent.summary, dataTypes: intent.dataTypes, action: intent.action })).digest("hex");
 }
 
 function publicIntent(intent) {
   return {
     intentId: intent.intentId,
     tabId: intent.tabId,
+    documentId: intent.documentId,
+    stateDigest: intent.stateDigest,
     actionType: intent.actionType,
     riskClass: intent.riskClass,
     summary: intent.summary,
@@ -148,8 +186,13 @@ function publicIntent(intent) {
     createdAt: intent.createdAt,
     expiresAt: intent.expiresAt,
     confirmedAt: intent.confirmedAt || null,
-    executedAt: intent.executedAt || null
+    executedAt: intent.executedAt || null,
+    staleReason: intent.staleReason || null
   };
+}
+
+function staleIntent(intent) {
+  return coded("ACTION_INTENT_STALE", "The page or form state changed after this action intent was prepared; prepare and confirm a new intent", publicIntent(intent));
 }
 
 function confirmationRequired(intent) {
@@ -159,6 +202,12 @@ function confirmationRequired(intent) {
 function boundedString(value, field, minimum, maximum) {
   if (typeof value !== "string" || value.length < minimum || value.length > maximum) throw coded("INVALID_PARAMS", `${field} must be ${minimum} to ${maximum} characters`);
   return value;
+}
+
+function normalizedDigest(value) {
+  const digest = String(value || "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw coded("INVALID_PARAMS", "stateDigest must be a SHA-256 hex digest");
+  return digest;
 }
 
 function requireSessionId(value) {

@@ -44,6 +44,21 @@ test("resource exporter rejects unsafe selections and oversized content", async 
   await assert.rejects(exporter.exportArchive("s", { ...base, resources: [{ resourceId: "r", url: "https://example.test/x", type: "Other", mimeType: "text/plain", content: "x".repeat(RESOURCE_EXPORT_LIMITS.maxResourceBytes + 1) }] }), { code: "RESOURCE_TOO_LARGE" });
 });
 
+test("resource exporter sanitizes C0 controls without invisible-character escapes", async (t) => {
+  const source = await fs.readFile(new URL("../src/resource-export.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\\u00(?:00|1f)/i);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "lingee-resource-export-filename-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const exporter = createResourceExporter({ rootDirectory: root, randomUUID: () => "sanitized" });
+  const result = await exporter.exportArchive("session", {
+    pageUrl: "https://example.test/page",
+    documentId: "document",
+    resources: [{ resourceId: "r", url: "https://example.test/file.txt", type: "Other", mimeType: "text/plain", suggestedFilename: `a${String.fromCharCode(0)}b${String.fromCharCode(31)}c.txt`, content: "safe", base64Encoded: false }]
+  });
+  const entries = readStoredZipEntries(await fs.readFile(result.path));
+  assert.equal(entries.get("resources/a_b_c.txt").toString(), "safe");
+});
+
 function readStoredZipEntries(buffer) {
   const entries = new Map();
   let offset = 0;

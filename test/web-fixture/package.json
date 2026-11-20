@@ -1,5 +1,5 @@
 {
-  "name": "lingee-chrome-control-web-fixture",
+  "name": "lingee-browser-control-web-fixture",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lingee Browser Control"
+  short_description: "通过 Lingee Bridge 安全控制现有浏览器"
+  default_prompt: "Use $lingee-browser-control standard high-level MCP or CLI methods exclusively to inspect and safely operate my existing browser tab; never use raw CDP or page scripts."

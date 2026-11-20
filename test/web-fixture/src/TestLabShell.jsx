@@ -8,7 +8,7 @@ export function TestLabShell({ section, children }) {
         <a className="lab-brand" href="#/kdesign" aria-label="Lingee KDesign Complete Test Lab">
           <img src="/lingee-logo.svg" alt="Lingee" />
           <span className="lab-brand-divider" />
-          <span><strong>KDesign Complete Test Lab</strong><small>确定性 Chrome 自动化夹具</small></span>
+          <span><strong>KDesign Complete Test Lab</strong><small>确定性 Browser 自动化夹具</small></span>
         </a>
         <label className="lab-global-search">
           <span aria-hidden="true">⌕</span>

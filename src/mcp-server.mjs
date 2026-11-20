@@ -2,9 +2,9 @@
 import readline from "node:readline";
 import { connectBridge, listBridgeInstances, toPublicBridgeInstance } from "./bridge-client.mjs";
 import { VERSION } from "./version.mjs";
-import { STANDARD_CAPABILITIES } from "../skills/lingee-chrome-control/scripts/runtime/standard-capabilities.mjs";
+import { STANDARD_CAPABILITIES } from "../skills/lingee-browser-control/scripts/runtime/standard-capabilities.mjs";
 
-const SERVER_INFO = { name: "lingee-chrome-agent-bridge", version: VERSION };
+const SERVER_INFO = { name: "lingee-browser-agent-bridge", version: VERSION };
 const TOOLS = STANDARD_CAPABILITIES;
 const toolByName = new Map(TOOLS.map((tool) => [tool.name, tool]));
 let client;
@@ -46,7 +46,7 @@ async function callTool(name, args) {
     if (name === "bridge_list_instances") {
       return textResult((await listBridgeInstances()).map(toPublicBridgeInstance));
     }
-    client ||= await connectBridge({ instanceId: process.env.UNIVERSAL_BROWSER_INSTANCE_ID });
+    client ||= await connectBridge({ instanceId: process.env.LINGEE_BROWSER_INSTANCE_ID });
     const result = await client.call(tool.method, args, { timeoutMs: Number(args.timeoutMs) || undefined });
     if (tool.imageResult && result?.data) {
       const { data, mimeType, ...metadata } = result;

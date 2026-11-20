@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const doctorUrl = pathToFileURL(
-  path.join(workspaceRoot, "skills", "lingee-chrome-control", "scripts", "doctor.mjs")
+  path.join(workspaceRoot, "skills", "lingee-browser-control", "scripts", "doctor.mjs")
 ).href;
 
 async function doctorModule() {
@@ -16,7 +16,7 @@ async function doctorModule() {
 }
 
 function diagnosticDependencies(overrides = {}) {
-  const instances = [{ instanceId: "chrome-a", startedAt: "2026-07-27T00:00:00.000Z" }];
+  const instances = [{ instanceId: "browser-a", startedAt: "2026-07-27T00:00:00.000Z" }];
   return {
     nodeVersion: process.versions.node,
     env: {},
@@ -106,14 +106,14 @@ test("reports sanitized pipe probe failures when descriptors exist", async () =>
     resolveClient: async () => ({ source: "injected", client: {
       listBridgeInstances: async () => [],
       diagnoseBridgeInstances: async () => ({
-        runtimeDirectory: "C:\\Users\\tester\\AppData\\Local\\UniversalBrowserBridge\\runtime",
+        runtimeDirectory: "C:\\Users\\tester\\AppData\\Local\\Lingee\\BrowserAgentBridge\\runtime",
         descriptorCount: 1,
         connectableCount: 0,
         probe: { attempts: 3, timeoutMs: 1000, retryDelayMs: 100 },
         instances: [],
         descriptors: [{
           file: "bridge-42.json",
-          instanceId: "chrome-a",
+          instanceId: "browser-a",
           pid: 42,
           endpoint: "must-not-leak",
           token: "must-not-leak",
@@ -150,7 +150,7 @@ test("reports a connected bridge whose extension is disconnected", async () => {
   const { runDiagnostics } = await doctorModule();
   const dependencies = diagnosticDependencies({
     resolveClient: async () => ({ source: "injected", client: {
-      listBridgeInstances: async () => [{ instanceId: "chrome-a", startedAt: "2026-07-27T00:00:00.000Z" }],
+      listBridgeInstances: async () => [{ instanceId: "browser-a", startedAt: "2026-07-27T00:00:00.000Z" }],
       connectBridge: async () => ({
         call: async (method, params) => {
           assert.equal(method, "bridge.getInfo");
@@ -166,7 +166,7 @@ test("reports a connected bridge whose extension is disconnected", async () => {
 
   assert.deepEqual(report.connection, {
     ok: false,
-    instanceId: "chrome-a",
+    instanceId: "browser-a",
     extensionConnected: false
   });
   assert.equal(report.ok, false);
@@ -177,13 +177,13 @@ test("uses read-only discovery and connection options for the requested instance
   const discoveryOptions = [];
   const connectionOptions = [];
   const dependencies = diagnosticDependencies({
-    env: { UNIVERSAL_BROWSER_INSTANCE_ID: "chrome-b" },
+    env: { LINGEE_BROWSER_INSTANCE_ID: "browser-b" },
     resolveClient: async () => ({ source: "injected", client: {
       listBridgeInstances: async (options) => {
         discoveryOptions.push(options);
         return [
-          { instanceId: "chrome-a", startedAt: "2026-07-27T00:00:00.000Z" },
-          { instanceId: "chrome-b", startedAt: "2026-07-27T00:00:01.000Z" }
+          { instanceId: "browser-a", startedAt: "2026-07-27T00:00:00.000Z" },
+          { instanceId: "browser-b", startedAt: "2026-07-27T00:00:01.000Z" }
         ];
       },
       connectBridge: async (options) => {
@@ -197,8 +197,8 @@ test("uses read-only discovery and connection options for the requested instance
   const report = await runDiagnostics(dependencies);
 
   assert.deepEqual(discoveryOptions, [{ cleanupStale: false }]);
-  assert.deepEqual(connectionOptions, [{ instanceId: "chrome-b", cleanupStale: false }]);
-  assert.equal(report.connection.instanceId, "chrome-b");
+  assert.deepEqual(connectionOptions, [{ instanceId: "browser-b", cleanupStale: false }]);
+  assert.equal(report.connection.instanceId, "browser-b");
   assert.equal(report.ok, true);
 });
 
@@ -207,7 +207,7 @@ test("does not connect when multiple instances exist without explicit selection"
   let connectCalls = 0;
   const dependencies = diagnosticDependencies({
     resolveClient: async () => ({ source: "injected", client: {
-      listBridgeInstances: async () => [{ instanceId: "chrome-a" }, { instanceId: "chrome-b" }],
+      listBridgeInstances: async () => [{ instanceId: "browser-a" }, { instanceId: "browser-b" }],
       connectBridge: async () => { connectCalls += 1; }
     } })
   });
@@ -232,14 +232,14 @@ test("CLI emits exactly one JSON diagnostic report", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "universal-chrome-doctor-"));
   try {
     await mkdir(path.join(root, "src"));
-    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "lingee-chrome-agent-bridge" }));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "lingee-browser-agent-bridge" }));
     await writeFile(
       path.join(root, "src", "bridge-client.mjs"),
-      "export async function listBridgeInstances() { return [{ instanceId: 'chrome-a' }]; }\n"
+      "export async function listBridgeInstances() { return [{ instanceId: 'browser-a' }]; }\n"
         + "export async function connectBridge() { return { call: async () => ({ extensionConnected: true }) }; }\n"
     );
     const result = await runNode([fileURLToPath(doctorUrl)], {
-      env: { ...process.env, UNIVERSAL_CHROME_BRIDGE_ROOT: root }
+      env: { ...process.env, LINGEE_BROWSER_BRIDGE_ROOT: root }
     });
 
     assert.equal(result.status, 0);

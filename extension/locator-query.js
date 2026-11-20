@@ -26,6 +26,7 @@ export function validateLocatorQuery(locator) {
 export function validateLocatorQueryOptions(operation, options = {}) {
   const limits = operation === "allTextContents"
     ? { maxResults: 500, maxCharsPerItem: 100000, maxTotalChars: 500000 }
+    : operation === "describeAll" ? { maxResults: 100, maxTextChars: 2000 }
     : ["innerText", "textContent", "getAttribute"].includes(operation) ? { maxChars: 500000 } : {};
   for (const [name, maximum] of Object.entries(limits)) {
     if (options[name] == null) continue;
@@ -71,6 +72,69 @@ export function runLocatorQuery(locator, operation, options = {}) {
     if (text.length > maxChars) return error("LOCATOR_RESULT_TOO_LARGE", `Locator text exceeds the ${maxChars} character limit`, { length: text.length, maxChars });
     return { ok: true, value: text };
   };
+  const stableSelector = (el) => {
+    const cssEscape = globalThis.CSS?.escape || ((value) => String(value).replace(/[^A-Za-z0-9_-]/g, "\\$&"));
+    if (el.id) return `#${cssEscape(el.id)}`;
+    const testId = el.getAttribute("data-testid");
+    if (testId) return `[data-testid="${escapeAttribute(testId)}"]`;
+    const elementName = el.getAttribute("name");
+    if (elementName) return `${String(el.localName || el.tagName || "*").toLowerCase()}[name="${escapeAttribute(elementName)}"]`;
+    const parts = [];
+    let node = el;
+    while (node?.nodeType === 1 && parts.length < 6) {
+      let part = String(node.localName || node.tagName || "*").toLowerCase();
+      const parent = node.parentElement;
+      if (parent?.children) {
+        const peers = [...parent.children].filter((peer) => String(peer.localName || peer.tagName).toLowerCase() === part);
+        if (peers.length > 1) part += `:nth-of-type(${peers.indexOf(node) + 1})`;
+      }
+      parts.unshift(part);
+      node = parent;
+    }
+    return parts.join(" > ");
+  };
+  const fieldLabel = (el) => {
+    const explicit = normalize(el.getAttribute("aria-label") || labelledByText(el) || (el.labels ? [...el.labels].map((label) => label.innerText || label.textContent || "").join(" ") : ""));
+    if (explicit) return explicit.slice(0, 500);
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+      const texts = [...(node.children || [])]
+        .filter((child) => child !== el && !child.contains?.(el))
+        .map((child) => normalize(child.innerText || child.textContent))
+        .filter((text) => text && text.length <= 200)
+        .sort((a, b) => a.length - b.length);
+      if (texts[0]) return texts[0];
+    }
+    return null;
+  };
+  const describe = (el, maxTextChars = 500) => {
+    const rect = el.getBoundingClientRect();
+    const type = String(el.type || el.getAttribute("type") || "").toLowerCase() || null;
+    const isPassword = type === "password";
+    const rawValue = "value" in el ? el.value : null;
+    const attributes = {};
+    for (const name of ["id", "class", "role", "type", "name", "placeholder", "title", "aria-checked", "aria-selected", "aria-expanded", "aria-disabled", "data-testid", "data-field", "data-key", "data-state"]) {
+      const value = el.getAttribute(name);
+      if (value != null && value !== "") attributes[name] = String(value).slice(0, 500);
+    }
+    return {
+      selector: stableSelector(el),
+      tag: String(el.localName || el.tagName || "").toLowerCase(),
+      role: implicitRole(el),
+      name: accessibleName(el).slice(0, 500),
+      text: normalize(el.innerText ?? el.textContent).slice(0, maxTextChars),
+      fieldLabel: fieldLabel(el),
+      value: isPassword ? null : rawValue == null ? null : String(rawValue).slice(0, maxTextChars),
+      valueRedacted: isPassword,
+      type,
+      visible: isVisible(el),
+      enabled: isEnabled(el),
+      checked: typeof el.checked === "boolean" ? el.checked : null,
+      selected: typeof el.selected === "boolean" ? el.selected : null,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      attributes
+    };
+  };
 
   let candidates;
   try {
@@ -84,7 +148,7 @@ export function runLocatorQuery(locator, operation, options = {}) {
   if (locator.role) candidates = candidates.filter((el) => implicitRole(el) === locator.role);
   if (locator.label) {
     const expected = normalize(locator.label);
-    candidates = candidates.filter((el) => matchesText(accessibleName(el), expected));
+    candidates = candidates.filter((el) => matchesText(accessibleName(el), expected) || matchesText(normalize(fieldLabel(el)), expected));
   }
   if (locator.text) {
     const expected = normalize(locator.text);
@@ -124,6 +188,12 @@ export function runLocatorQuery(locator, operation, options = {}) {
     }
     return { ok: true, value: values };
   }
+  if (operation === "describeAll") {
+    const maxResults = Math.max(1, Math.min(Number(options.maxResults) || 50, 100));
+    const maxTextChars = Math.max(1, Math.min(Number(options.maxTextChars) || 500, 2000));
+    if (candidates.length > maxResults) return error("LOCATOR_RESULT_TOO_LARGE", `Locator matched more than ${maxResults} elements`, { count: candidates.length, maxResults });
+    return { ok: true, value: candidates.map((element) => describe(element, maxTextChars)) };
+  }
 
   if (candidates.length === 0 && (operation === "isVisible" || operation === "isEnabled")) return { ok: true, value: false };
   if (candidates.length === 0) return error("LOCATOR_NOT_FOUND", "No element matched the locator");
@@ -136,6 +206,7 @@ export function runLocatorQuery(locator, operation, options = {}) {
   if (operation === "getAttribute") return boundedText(element.getAttribute(options.name), maxChars);
   if (operation === "isVisible") return { ok: true, value: isVisible(element) };
   if (operation === "isEnabled") return { ok: true, value: isEnabled(element) };
+  if (operation === "describe") return { ok: true, value: describe(element, Math.max(1, Math.min(Number(options.maxTextChars) || 500, 2000))) };
   return error("INVALID_PARAMS", `Unknown locator query operation: ${operation}`);
 }
 

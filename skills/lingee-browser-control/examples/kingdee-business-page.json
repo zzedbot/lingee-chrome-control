@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "workflows": [
+    {
+      "id": "generic-div-action",
+      "description": "Uniquely locate and click a Kingdee toolbar action rendered as a generic div, then verify a deterministic page result.",
+      "defaults": {
+        "ACTION_LOCATOR": { "css": ".generic-business-action", "text": "新增", "exact": true },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "新增:ok"
+      },
+      "steps": [
+        { "id": "require-unique-action", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$ACTION_LOCATOR" }, "expect": { "equals": 1 } },
+        { "id": "click-action", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$ACTION_LOCATOR" } },
+        { "id": "verify-result", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "verified-controlled-fill",
+      "description": "Replace an existing React/KDesign controlled-input value, then independently read the exact live value.",
+      "defaults": {
+        "INPUT_LOCATOR": { "testId": "native-fill" },
+        "VALUE": "Lingee Fill",
+        "VALUE_LENGTH": 11
+      },
+      "steps": [
+        { "id": "fill", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR", "value": "$VALUE" }, "expect": { "path": "valueLength", "equals": "$VALUE_LENGTH" } },
+        { "id": "read-exact-value", "method": "browser.locatorState", "params": { "tabId": "$TAB_ID", "locator": "$INPUT_LOCATOR" }, "expect": { "path": "value", "equals": "$VALUE" } }
+      ]
+    },
+    {
+      "id": "split-dropdown-action",
+      "description": "Open a Kingdee split-button dropdown by structure, then choose and verify one exact visible menu item.",
+      "defaults": {
+        "ARROW_LOCATOR": { "css": ".generic-business-split > :nth-child(2)" },
+        "MENU_ITEM_LOCATOR": { "css": ".generic-business-menu-item", "text": "反审核", "exact": true },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "反审核:ok"
+      },
+      "steps": [
+        { "id": "open-menu", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$ARROW_LOCATOR" } },
+        { "id": "wait-menu-item", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$MENU_ITEM_LOCATOR", "state": "visible", "timeoutMs": 5000 } },
+        { "id": "choose-menu-item", "method": "browser.click", "params": { "tabId": "$TAB_ID", "locator": "$MENU_ITEM_LOCATOR" } },
+        { "id": "verify-result", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "verified-record-form-fill",
+      "description": "Fill two business-record fields sequentially and stop at the first field whose live value cannot be read back exactly.",
+      "defaults": {
+        "CODE_LOCATOR": { "label": "编码 *", "exact": true },
+        "CODE_VALUE": "TEST-OACONN-20261117-000001",
+        "NAME_LOCATOR": { "label": "名称 *", "exact": true },
+        "NAME_VALUE": "测试基础资料"
+      },
+      "steps": [
+        { "id": "fill-code", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$CODE_LOCATOR", "value": "$CODE_VALUE" } },
+        { "id": "read-code", "method": "browser.locatorState", "params": { "tabId": "$TAB_ID", "locator": "$CODE_LOCATOR" }, "expect": { "path": "value", "equals": "$CODE_VALUE" } },
+        { "id": "fill-name", "method": "browser.fill", "params": { "tabId": "$TAB_ID", "locator": "$NAME_LOCATOR", "value": "$NAME_VALUE" } },
+        { "id": "read-name", "method": "browser.locatorState", "params": { "tabId": "$TAB_ID", "locator": "$NAME_LOCATOR" }, "expect": { "path": "value", "equals": "$NAME_VALUE" } }
+      ]
+    },
+    {
+      "id": "prepare-record-save-with-feedback",
+      "description": "Prepare a record-save intent whose visible click is observed for a short-lived success message. Override SUMMARY, CODE_VALUE and locators with the final reviewed form state before presenting the intent to the user.",
+      "defaults": {
+        "SUMMARY": "保存已逐字段读回的唯一测试记录 TEST-OACONN-20261117-000001",
+        "DATA_TYPES": ["测试基础资料文本"],
+        "SAVE_LOCATOR": { "css": "#bar_save" },
+        "SUCCESS_TEXT": "保存成功"
+      },
+      "steps": [
+        { "id": "require-unique-save", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$SAVE_LOCATOR" }, "expect": { "equals": 1 } },
+        { "id": "prepare-save", "method": "browser.prepareActionIntent", "params": { "tabId": "$TAB_ID", "actionType": "record-create", "summary": "$SUMMARY", "dataTypes": "$DATA_TYPES", "action": { "method": "browser.performAndWaitForFeedback", "params": { "action": { "method": "browser.click", "params": { "locator": "$SAVE_LOCATOR" } }, "text": "$SUCCESS_TEXT", "exact": false, "timeoutMs": 10000 } } }, "expect": { "path": "status", "equals": "pending-confirmation" } }
+      ]
+    },
+    {
+      "id": "verify-record-persistence",
+      "description": "After the confirmed save intent completes, verify one durable record ID, status, matching list row, or deliberately reopened field. A captured success message alone is insufficient.",
+      "defaults": {
+        "PERSISTED_LOCATOR": { "testId": "persisted-record-code" },
+        "EXPECTED_VALUE": "TEST-OACONN-20261117-000001"
+      },
+      "steps": [
+        { "id": "wait-persisted-state", "method": "browser.waitFor", "params": { "tabId": "$TAB_ID", "locator": "$PERSISTED_LOCATOR", "state": "visible", "timeoutMs": 10000 } },
+        { "id": "read-persisted-state", "method": "browser.locatorState", "params": { "tabId": "$TAB_ID", "locator": "$PERSISTED_LOCATOR" }, "expect": { "path": "value", "equals": "$EXPECTED_VALUE" } }
+      ]
+    },
+    {
+      "id": "select-business-row",
+      "description": "Idempotently select one real table-row checkbox and verify the application's selected-row state.",
+      "defaults": {
+        "CHECKBOX_LOCATOR": { "testId": "generic-business-row-check" },
+        "RESULT_LOCATOR": { "testId": "generic-business-result" },
+        "EXPECTED_RESULT": "selected=true"
+      },
+      "steps": [
+        { "id": "select-row", "method": "browser.setChecked", "params": { "tabId": "$TAB_ID", "locator": "$CHECKBOX_LOCATOR", "checked": true } },
+        { "id": "verify-selected-state", "method": "browser.locatorTextContent", "params": { "tabId": "$TAB_ID", "locator": "$RESULT_LOCATOR", "maxChars": 1000 }, "expect": { "includes": "$EXPECTED_RESULT" } }
+      ]
+    },
+    {
+      "id": "prepare-delete-intent",
+      "description": "Prepare, but never confirm or execute, an exact deletion click so the caller can present the returned risk metadata to the user.",
+      "defaults": {
+        "SUMMARY": "删除已复核的一条测试基础资料",
+        "DATA_TYPES": ["测试基础资料"],
+        "CONFIRM_LOCATOR": { "css": "*:not(:has(*))", "text": "确定", "exact": true }
+      },
+      "steps": [
+        { "id": "require-unique-confirm", "method": "browser.locatorCount", "params": { "tabId": "$TAB_ID", "locator": "$CONFIRM_LOCATOR" }, "expect": { "equals": 1 } },
+        { "id": "prepare-delete", "method": "browser.prepareActionIntent", "params": { "tabId": "$TAB_ID", "actionType": "delete", "summary": "$SUMMARY", "dataTypes": "$DATA_TYPES", "action": { "method": "browser.click", "params": { "locator": "$CONFIRM_LOCATOR" } } }, "expect": { "path": "status", "equals": "pending-confirmation" } }
+      ]
+    }
+  ]
+}
